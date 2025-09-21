@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Staff Leave Application</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+    import { getFirestore, collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+    // Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyDAzD0poGb7lVIwQP4XCxYmO_V86EiuovQ",
+      authDomain: "leave-application-d86b4.firebaseapp.com",
+      projectId: "leave-application-d86b4",
+      storageBucket: "leave-application-d86b4.firebasestorage.app",
+      messagingSenderId: "343294337333",
+      appId: "1:343294337333:web:c3a8d75c58301ffd65ac7c"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    let currentUser = null;
+
+    // =================== LOGIN ===================
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("loginBtn").addEventListener("click", async () => {
+        const username = document.getElementById("username").value;
+        const password = document.getElementById("password").value;
+        const userDoc = await getDoc(doc(db, "users", username));
+        if (userDoc.exists() && userDoc.data().password === password) {
+          currentUser = { username, ...userDoc.data() };
+          document.getElementById("loginSection").style.display = "none";
+          document.getElementById("logoutSection").style.display = "block";
+          if (currentUser.role === "staff") {
+            document.getElementById("staffSection").style.display = "block";
+            showBalance();
+            loadMyRequests();
+          } else {
+            document.getElementById("adminSection").style.display = "block";
+            loadAllRequests();
+          }
+        } else {
+          alert("Invalid login");
+        }
+      });
+
+      document.getElementById("logoutBtn").addEventListener("click", () => {
+        currentUser = null;
+        location.reload();
+      });
+    });
+
+    // =================== STAFF APPLY LEAVE ===================
+    document.getElementById("applyBtn").addEventListener("click", async () => {
+      const type = document.getElementById("leaveType").value;
+      const from = document.getElementById("fromDate").value;
+      const to = document.getElementById("toDate").value;
+      const reason = document.getElementById("reason").value;
+      const duration = document.getElementById("leaveDuration").value; // Full / Half
+
+      if (!from || !to) return alert("Select dates!");
+
+      const leaveId = `${currentUser.username}_${Date.now()}`;
+      await setDoc(doc(db, "leaves", leaveId), {
+        username: currentUser.username,
+        type, from, to, reason,
+        duration,
+        status: "Pending",
+        createdAt: new Date().toISOString()
+      });
+
+      alert("Leave applied!");
+      loadMyRequests();
+    });
+
+    async function loadMyRequests() {
+      const list = document.getElementById("myRequests");
+      list.innerHTML = "";
+      const fromF = document.getElementById("myFrom").value;
+      const toF = document.getElementById("myTo").value;
+
+      const snap = await getDocs(collection(db, "leaves"));
+      snap.forEach((d) => {
+        const data = d.data();
+        if (data.username === currentUser.username) {
+          if (fromF && new Date(data.from) < new Date(fromF)) return;
+          if (toF && new Date(data.to) > new Date(toF)) return;
+          const li = document.createElement("li");
+          li.className = "list-group-item";
+          li.textContent = `${data.from} → ${data.to} | ${data.type} | ${data.duration} | ${data.status}`;
+          list.appendChild(li);
+        }
+      });
+    }
+    document.getElementById("myFilterBtn").addEventListener("click", loadMyRequests);
+
+    async function showBalance() {
+      const userDoc = await getDoc(doc(db, "users", currentUser.username));
+      if (userDoc.exists()) {
+        const quota = userDoc.data().quota || {};
+        let html = "<ul>";
+        for (const [type, val] of Object.entries(quota)) {
+          html += `<li>${type}: ${val} days left</li>`;
+        }
+        html += "</ul>";
+        document.getElementById("balance").innerHTML = html;
+      }
+    }
+
+    // =================== ADMIN (HR/MANAGER) ===================
+    document.getElementById("addUserBtn").addEventListener("click", async () => {
+      const u = document.getElementById("newUser").value;
+      const p = document.getElementById("newPass").value;
+      const r = document.getElementById("newRole").value;
+      await setDoc(doc(db, "users", u), { password: p, role: r, quota: {
+        Annual:14, Medical:10, Emergency:5, Unpaid:0, Maternity:60, Paternity:7, Compassionate:3
+      }});
+      alert("User added with default quota!");
+    });
+
+    document.getElementById("delUserBtn").addEventListener("click", async () => {
+      await deleteDoc(doc(db, "users", document.getElementById("delUser").value));
+      alert("User deleted!");
+    });
+
+    document.getElementById("resetBtn").addEventListener("click", async () => {
+      const uname = document.getElementById("resetUser").value;
+      const npass = document.getElementById("resetPass").value;
+      await updateDoc(doc(db, "users", uname), { password: npass });
+      alert("Password reset!");
+    });
+
+    // Update quota
+    document.getElementById("updateQuotaBtn").addEventListener("click", async () => {
+      const uname = document.getElementById("quotaUser").value;
+      const qtype = document.getElementById("quotaType").value;
+      const qdays = parseFloat(document.getElementById("quotaDays").value);
+      const uref = doc(db, "users", uname);
+      const snap = await getDoc(uref);
+      if (snap.exists()) {
+        const quota = snap.data().quota || {};
+        quota[qtype] = qdays;
+        await updateDoc(uref, { quota });
+        alert("Quota updated!");
+      }
+    });
+
+    async function loadAllRequests() {
+      const list = document.getElementById("allRequests");
+      list.innerHTML = "";
+      const f = document.getElementById("adminFrom").value;
+      const t = document.getElementById("adminTo").value;
+
+      const snap = await getDocs(collection(db, "leaves"));
+      snap.forEach(async (d) => {
+        const data = d.data();
+        if (f && new Date(data.from) < new Date(f)) return;
+        if (t && new Date(data.to) > new Date(t)) return;
+        const li = document.createElement("li");
+        li.className = "list-group-item";
+        li.textContent = `${data.username} | ${data.from} → ${data.to} | ${data.type} | ${data.duration} | ${data.status}`;
+
+        if (data.status === "Pending") {
+          const approveBtn = document.createElement("button");
+          approveBtn.textContent = "Approve";
+          approveBtn.className = "btn btn-sm btn-success mx-1";
+          approveBtn.onclick = async () => {
+            // Deduct quota (1 or 0.5)
+            const uref = doc(db, "users", data.username);
+            const usnap = await getDoc(uref);
+            if (usnap.exists()) {
+              const quota = usnap.data().quota || {};
+              const deduction = data.duration === "Half Day" ? 0.5 : 1;
+              if (quota[data.type] >= deduction) {
+                quota[data.type] -= deduction;
+                await updateDoc(uref, { quota });
+              }
+            }
+            await updateDoc(doc(db, "leaves", d.id), { status: "Approved" });
+            loadAllRequests();
+          };
+          const rejectBtn = document.createElement("button");
+          rejectBtn.textContent = "Reject";
+          rejectBtn.className = "btn btn-sm btn-danger mx-1";
+          rejectBtn.onclick = async () => {
+            await updateDoc(doc(db, "leaves", d.id), { status: "Rejected" });
+            loadAllRequests();
+          };
+          li.appendChild(approveBtn);
+          li.appendChild(rejectBtn);
+        }
+        list.appendChild(li);
+      });
+    }
+    document.getElementById("adminFilterBtn").addEventListener("click", loadAllRequests);
+
+  </script>
+</head>
+<body class="container py-3">
+
+  <h3>Staff Leave Application</h3>
+
+  <!-- Login -->
+  <div id="loginSection">
+    <input id="username" class="form-control mb-2" placeholder="Username">
+    <input id="password" type="password" class="form-control mb-2" placeholder="Password">
+    <button id="loginBtn" class="btn btn-primary">Login</button>
+  </div>
+
+  <!-- Logout -->
+  <div id="logoutSection" style="display:none;">
+    <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+  </div>
+
+  <!-- Staff Section -->
+  <div id="staffSection" style="display:none;">
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6>Apply Leave</h6>
+        <select id="leaveType" class="form-control mb-2">
+          <option>Annual</option><option>Medical</option><option>Emergency</option>
+          <option>Unpaid</option><option>Maternity</option><option>Paternity</option><option>Compassionate</option>
+        </select>
+        <select id="leaveDuration" class="form-control mb-2">
+          <option>Full Day</option>
+          <option>Half Day</option>
+        </select>
+        <input id="fromDate" type="date" class="form-control mb-2">
+        <input id="toDate" type="date" class="form-control mb-2">
+        <textarea id="reason" class="form-control mb-2" placeholder="Reason"></textarea>
+        <button id="applyBtn" class="btn btn-success">Submit</button>
+      </div>
+    </div>
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6>Leave Balance</h6>
+        <div id="balance"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h6>My Leave Requests</h6>
+        <div class="d-flex mb-2">
+          <input id="myFrom" type="date" class="form-control me-2">
+          <input id="myTo" type="date" class="form-control me-2">
+          <button id="myFilterBtn" class="btn btn-sm btn-secondary">Filter</button>
+        </div>
+        <ul id="myRequests" class="list-group"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- HR/Manager Section -->
+  <div id="adminSection" style="display:none;">
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6>User Management</h6>
+        <input id="newUser" class="form-control mb-2" placeholder="Username">
+        <input id="newPass" class="form-control mb-2" placeholder="Password">
+        <select id="newRole" class="form-control mb-2"><option>staff</option><option>hr</option><option>manager</option></select>
+        <button id="addUserBtn" class="btn btn-primary mb-2">Add User</button>
+        <input id="delUser" class="form-control mb-2" placeholder="Username to delete">
+        <button id="delUserBtn" class="btn btn-danger mb-2">Delete</button>
+        <input id="resetUser" class="form-control mb-2" placeholder="Username to reset">
+        <input id="resetPass" class="form-control mb-2" placeholder="New Password">
+        <button id="resetBtn" class="btn btn-warning mb-2">Reset Password</button>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6>Set Leave Quota</h6>
+        <input id="quotaUser" class="form-control mb-2" placeholder="Username">
+        <select id="quotaType" class="form-control mb-2">
+          <option>Annual</option><option>Medical</option><option>Emergency</option>
+          <option>Unpaid</option><option>Maternity</option><option>Paternity</option><option>Compassionate</option>
+        </select>
+        <input id="quotaDays" type="number" class="form-control mb-2" placeholder="Days">
+        <button id="updateQuotaBtn" class="btn btn-info">Update Quota</button>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6>Leave Requests (All Staff)</h6>
+        <div class="d-flex mb-2">
+          <input id="adminFrom" type="date" class="form-control me-2">
+          <input id="adminTo" type="date" class="form-control me-2">
+          <button id="adminFilterBtn" class="btn btn-sm btn-secondary">Filter</button>
+        </div>
+        <ul id="allRequests" class="list-group"></ul>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
