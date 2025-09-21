@@ -196,6 +196,26 @@
     }
     document.getElementById("adminFilterBtn").addEventListener("click", loadAllRequests);
 
+    // =================== DELETE LEAVES BY DATE RANGE ===================
+    document.getElementById("deleteRangeBtn").addEventListener("click", async () => {
+      const from = document.getElementById("deleteFrom").value;
+      const to = document.getElementById("deleteTo").value;
+      if (!from || !to) return alert("Select date range!");
+      if (!confirm("Are you sure you want to delete all leave records in this range?")) return;
+
+      const snap = await getDocs(collection(db, "leaves"));
+      let count = 0;
+      for (const d of snap.docs) {
+        const data = d.data();
+        if (new Date(data.from) >= new Date(from) && new Date(data.to) <= new Date(to)) {
+          await deleteDoc(doc(db, "leaves", d.id));
+          count++;
+        }
+      }
+      alert(`${count} leave records deleted.`);
+      loadAllRequests();
+    });
+
   </script>
 </head>
 <body class="container py-3">
@@ -291,6 +311,18 @@
           <button id="adminFilterBtn" class="btn btn-sm btn-secondary">Filter</button>
         </div>
         <ul id="allRequests" class="list-group"></ul>
+      </div>
+    </div>
+
+    <!-- NEW: Delete Leave Records by Date Range -->
+    <div class="card">
+      <div class="card-body">
+        <h6>Delete Leave Records</h6>
+        <div class="d-flex mb-2">
+          <input id="deleteFrom" type="date" class="form-control me-2">
+          <input id="deleteTo" type="date" class="form-control me-2">
+          <button id="deleteRangeBtn" class="btn btn-sm btn-danger">Delete Range</button>
+        </div>
       </div>
     </div>
   </div>
