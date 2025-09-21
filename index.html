@@ -40,7 +40,7 @@
           } else {
             document.getElementById("adminSection").style.display = "block";
             loadAllRequests();
-            loadUserList(); // populate user dropdown for report
+            loadUserList(); // populate dropdowns
           }
         } else {
           alert("Invalid login");
@@ -59,7 +59,7 @@
       const from = document.getElementById("fromDate").value;
       const to = document.getElementById("toDate").value;
       const reason = document.getElementById("reason").value;
-      const duration = document.getElementById("leaveDuration").value; // Full / Half
+      const duration = document.getElementById("leaveDuration").value;
 
       if (!from || !to) return alert("Select dates!");
 
@@ -115,9 +115,13 @@
       const u = document.getElementById("newUser").value;
       const p = document.getElementById("newPass").value;
       const r = document.getElementById("newRole").value;
-      await setDoc(doc(db, "users", u), { password: p, role: r, quota: {
-        Annual:14, Medical:10, Emergency:5, Unpaid:0, Maternity:60, Paternity:7, Compassionate:3
-      }});
+      await setDoc(doc(db, "users", u), {
+        password: p, role: r,
+        quota: {
+          Annual: 14, Medical: 10, Emergency: 5, Unpaid: 0,
+          Maternity: 60, Paternity: 7, Compassionate: 3
+        }
+      });
       alert("User added with default quota!");
       loadUserList();
     });
@@ -147,6 +151,7 @@
         quota[qtype] = qdays;
         await updateDoc(uref, { quota });
         alert("Quota updated!");
+        loadSelectedBalance();
       }
     });
 
@@ -170,7 +175,6 @@
           approveBtn.textContent = "Approve";
           approveBtn.className = "btn btn-sm btn-success mx-1";
           approveBtn.onclick = async () => {
-            // Deduct quota (1 or 0.5)
             const uref = doc(db, "users", data.username);
             const usnap = await getDoc(uref);
             if (usnap.exists()) {
@@ -199,22 +203,53 @@
     }
     document.getElementById("adminFilterBtn").addEventListener("click", loadAllRequests);
 
-    // =================== REPORT DOWNLOAD ===================
+    // =================== REPORT + USER DROPDOWNS ===================
     async function loadUserList() {
-      const select = document.getElementById("reportUser");
-      select.innerHTML = '<option value="">All</option>';
+      const selects = [
+        document.getElementById("quotaUser"),
+        document.getElementById("reportUser"),
+        document.getElementById("balanceUser")
+      ];
+      selects.forEach(sel => { if (sel) sel.innerHTML = ""; });
       const snap = await getDocs(collection(db, "users"));
       snap.forEach(u => {
-        select.innerHTML += `<option value="${u.id}">${u.id}</option>`;
+        selects.forEach(sel => {
+          if (sel) sel.innerHTML += `<option value="${u.id}">${u.id}</option>`;
+        });
       });
+      if (document.getElementById("reportUser"))
+        document.getElementById("reportUser").innerHTML = '<option value="">All</option>' + document.getElementById("reportUser").innerHTML;
     }
 
+    // Show selected staff leave balance
+    async function loadSelectedBalance() {
+      const uname = document.getElementById("balanceUser").value;
+      const ref = doc(db, "users", uname);
+      const snap = await getDoc(ref);
+      const list = document.getElementById("adminBalance");
+      list.innerHTML = "";
+      if (snap.exists()) {
+        const quota = snap.data().quota || {};
+        for (const [type, val] of Object.entries(quota)) {
+          list.innerHTML += `<li class="list-group-item">${type}: ${val} days left</li>`;
+        }
+      } else {
+        list.innerHTML = "<li class='list-group-item'>No quota found</li>";
+      }
+    }
+    document.addEventListener("DOMContentLoaded", () => {
+      if (document.getElementById("balanceUser")) {
+        document.getElementById("balanceUser").addEventListener("change", loadSelectedBalance);
+      }
+    });
+
+    // =================== REPORT DOWNLOAD ===================
     document.getElementById("downloadBtn").addEventListener("click", async () => {
       const from = document.getElementById("reportFrom").value;
       const to = document.getElementById("reportTo").value;
       const uname = document.getElementById("reportUser").value;
 
-      let rows = [["Username","From","To","Type","Duration","Status","Reason"]];
+      let rows = [["Username", "From", "To", "Type", "Duration", "Status", "Reason"]];
       const snap = await getDocs(collection(db, "leaves"));
       snap.forEach(d => {
         const data = d.data();
@@ -224,7 +259,6 @@
         rows.push([data.username, data.from, data.to, data.type, data.duration, data.status, data.reason]);
       });
 
-      // Convert to CSV
       let csv = rows.map(r => r.join(",")).join("\n");
       let blob = new Blob([csv], { type: "text/csv" });
       let url = URL.createObjectURL(blob);
@@ -236,7 +270,6 @@
   </script>
 </head>
 <body class="container py-3">
-
   <h3>Staff Leave Application</h3>
 
   <!-- Login -->
@@ -306,16 +339,26 @@
       </div>
     </div>
 
+    <!-- Set Leave Quota -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>Set Leave Quota</h6>
-        <input id="quotaUser" class="form-control mb-2" placeholder="Username">
+        <select id="quotaUser" class="form-control mb-2"></select>
         <select id="quotaType" class="form-control mb-2">
           <option>Annual</option><option>Medical</option><option>Emergency</option>
           <option>Unpaid</option><option>Maternity</option><option>Paternity</option><option>Compassionate</option>
         </select>
         <input id="quotaDays" type="number" class="form-control mb-2" placeholder="Days">
         <button id="updateQuotaBtn" class="btn btn-info">Update Quota</button>
+      </div>
+    </div>
+
+    <!-- View Staff Leave Balance -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6>View Staff Leave Balance</h6>
+        <select id="balanceUser" class="form-control mb-2"></select>
+        <ul id="adminBalance" class="list-group"></ul>
       </div>
     </div>
 
@@ -340,9 +383,3 @@
           <select id="reportUser" class="form-control me-2"></select>
           <button id="downloadBtn" class="btn btn-success">Download CSV</button>
         </div>
-      </div>
-    </div>
-  </div>
-
-</body>
-</html>
