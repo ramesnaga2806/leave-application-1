@@ -40,6 +40,7 @@
           } else {
             document.getElementById("adminSection").style.display = "block";
             loadAllRequests();
+            loadUserList(); // populate user dropdown for report
           }
         } else {
           alert("Invalid login");
@@ -118,11 +119,13 @@
         Annual:14, Medical:10, Emergency:5, Unpaid:0, Maternity:60, Paternity:7, Compassionate:3
       }});
       alert("User added with default quota!");
+      loadUserList();
     });
 
     document.getElementById("delUserBtn").addEventListener("click", async () => {
       await deleteDoc(doc(db, "users", document.getElementById("delUser").value));
       alert("User deleted!");
+      loadUserList();
     });
 
     document.getElementById("resetBtn").addEventListener("click", async () => {
@@ -196,26 +199,40 @@
     }
     document.getElementById("adminFilterBtn").addEventListener("click", loadAllRequests);
 
-    // =================== DELETE LEAVES BY DATE RANGE ===================
-    document.getElementById("deleteRangeBtn").addEventListener("click", async () => {
-      const from = document.getElementById("deleteFrom").value;
-      const to = document.getElementById("deleteTo").value;
-      if (!from || !to) return alert("Select date range!");
-      if (!confirm("Are you sure you want to delete all leave records in this range?")) return;
+    // =================== REPORT DOWNLOAD ===================
+    async function loadUserList() {
+      const select = document.getElementById("reportUser");
+      select.innerHTML = '<option value="">All</option>';
+      const snap = await getDocs(collection(db, "users"));
+      snap.forEach(u => {
+        select.innerHTML += `<option value="${u.id}">${u.id}</option>`;
+      });
+    }
 
+    document.getElementById("downloadBtn").addEventListener("click", async () => {
+      const from = document.getElementById("reportFrom").value;
+      const to = document.getElementById("reportTo").value;
+      const uname = document.getElementById("reportUser").value;
+
+      let rows = [["Username","From","To","Type","Duration","Status","Reason"]];
       const snap = await getDocs(collection(db, "leaves"));
-      let count = 0;
-      for (const d of snap.docs) {
+      snap.forEach(d => {
         const data = d.data();
-        if (new Date(data.from) >= new Date(from) && new Date(data.to) <= new Date(to)) {
-          await deleteDoc(doc(db, "leaves", d.id));
-          count++;
-        }
-      }
-      alert(`${count} leave records deleted.`);
-      loadAllRequests();
-    });
+        if (from && new Date(data.from) < new Date(from)) return;
+        if (to && new Date(data.to) > new Date(to)) return;
+        if (uname && data.username !== uname) return;
+        rows.push([data.username, data.from, data.to, data.type, data.duration, data.status, data.reason]);
+      });
 
+      // Convert to CSV
+      let csv = rows.map(r => r.join(",")).join("\n");
+      let blob = new Blob([csv], { type: "text/csv" });
+      let url = URL.createObjectURL(blob);
+      let a = document.createElement("a");
+      a.href = url;
+      a.download = "leave_report.csv";
+      a.click();
+    });
   </script>
 </head>
 <body class="container py-3">
@@ -314,14 +331,14 @@
       </div>
     </div>
 
-    <!-- NEW: Delete Leave Records by Date Range -->
-    <div class="card">
+    <div class="card mb-3">
       <div class="card-body">
-        <h6>Delete Leave Records</h6>
+        <h6>Download Leave Report</h6>
         <div class="d-flex mb-2">
-          <input id="deleteFrom" type="date" class="form-control me-2">
-          <input id="deleteTo" type="date" class="form-control me-2">
-          <button id="deleteRangeBtn" class="btn btn-sm btn-danger">Delete Range</button>
+          <input id="reportFrom" type="date" class="form-control me-2">
+          <input id="reportTo" type="date" class="form-control me-2">
+          <select id="reportUser" class="form-control me-2"></select>
+          <button id="downloadBtn" class="btn btn-success">Download CSV</button>
         </div>
       </div>
     </div>
