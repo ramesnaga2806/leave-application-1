@@ -40,7 +40,7 @@
           } else {
             document.getElementById("adminSection").style.display = "block";
             loadAllRequests();
-            loadUserList(); // populate dropdowns
+            loadUserList();
           }
         } else {
           alert("Invalid login");
@@ -64,11 +64,14 @@
       if (!from || !to) return alert("Select dates!");
 
       const leaveId = `${currentUser.username}_${Date.now()}`;
+      const applyDate = new Date().toISOString().split("T")[0]; // Store date only
+
       await setDoc(doc(db, "leaves", leaveId), {
         username: currentUser.username,
         type, from, to, reason,
         duration,
         status: "Pending",
+        applyDate,  // ✅ New field
         createdAt: new Date().toISOString()
       });
 
@@ -90,7 +93,7 @@
           if (toF && new Date(data.to) > new Date(toF)) return;
           const li = document.createElement("li");
           li.className = "list-group-item";
-          li.textContent = `${data.from} → ${data.to} | ${data.type} | ${data.duration} | ${data.status}`;
+          li.textContent = `${data.from} → ${data.to} | ${data.type} | ${data.duration} | ${data.status} | Applied: ${data.applyDate || "-"}`;
           list.appendChild(li);
         }
       });
@@ -168,7 +171,7 @@
         if (t && new Date(data.to) > new Date(t)) return;
         const li = document.createElement("li");
         li.className = "list-group-item";
-        li.textContent = `${data.username} | ${data.from} → ${data.to} | ${data.type} | ${data.duration} | ${data.status}`;
+        li.textContent = `${data.username} | ${data.from} → ${data.to} | ${data.type} | ${data.duration} | ${data.status} | Applied: ${data.applyDate || "-"}`;
 
         if (data.status === "Pending") {
           const approveBtn = document.createElement("button");
@@ -208,7 +211,8 @@
       const selects = [
         document.getElementById("quotaUser"),
         document.getElementById("reportUser"),
-        document.getElementById("balanceUser")
+        document.getElementById("balanceUser"),
+        document.getElementById("deleteUser")
       ];
       selects.forEach(sel => { if (sel) sel.innerHTML = ""; });
       const snap = await getDocs(collection(db, "users"));
@@ -219,9 +223,10 @@
       });
       if (document.getElementById("reportUser"))
         document.getElementById("reportUser").innerHTML = '<option value="">All</option>' + document.getElementById("reportUser").innerHTML;
+      if (document.getElementById("deleteUser"))
+        document.getElementById("deleteUser").innerHTML = '<option value="">All Users</option>' + document.getElementById("deleteUser").innerHTML;
     }
 
-    // Show selected staff leave balance
     async function loadSelectedBalance() {
       const uname = document.getElementById("balanceUser").value;
       const ref = doc(db, "users", uname);
@@ -241,6 +246,7 @@
       if (document.getElementById("balanceUser")) {
         document.getElementById("balanceUser").addEventListener("change", loadSelectedBalance);
       }
+      loadUserList();
     });
 
     // =================== REPORT DOWNLOAD ===================
@@ -249,14 +255,14 @@
       const to = document.getElementById("reportTo").value;
       const uname = document.getElementById("reportUser").value;
 
-      let rows = [["Username", "From", "To", "Type", "Duration", "Status", "Reason"]];
+      let rows = [["Username", "From", "To", "Type", "Duration", "Status", "Reason", "Apply Date"]];
       const snap = await getDocs(collection(db, "leaves"));
       snap.forEach(d => {
         const data = d.data();
         if (from && new Date(data.from) < new Date(from)) return;
         if (to && new Date(data.to) > new Date(to)) return;
         if (uname && data.username !== uname) return;
-        rows.push([data.username, data.from, data.to, data.type, data.duration, data.status, data.reason]);
+        rows.push([data.username, data.from, data.to, data.type, data.duration, data.status, data.reason, data.applyDate || "-"]);
       });
 
       let csv = rows.map(r => r.join(",")).join("\n");
@@ -267,6 +273,34 @@
       a.download = "leave_report.csv";
       a.click();
     });
+
+    // =================== BULK DELETE ===================
+    document.getElementById("deleteBtn").addEventListener("click", async () => {
+      const from = document.getElementById("deleteFrom").value;
+      const to = document.getElementById("deleteTo").value;
+      const uname = document.getElementById("deleteUser").value;
+
+      if (!from || !to) {
+        alert("Please select both From and To dates.");
+        return;
+      }
+
+      if (!confirm(`Delete all leave records for ${uname || "ALL USERS"} between ${from} and ${to}?`)) return;
+
+      const snap = await getDocs(collection(db, "leaves"));
+      let deleted = 0;
+      for (const d of snap.docs) {
+        const data = d.data();
+        if (new Date(data.from) >= new Date(from) && new Date(data.to) <= new Date(to)) {
+          if (!uname || data.username === uname) {
+            await deleteDoc(doc(db, "leaves", d.id));
+            deleted++;
+          }
+        }
+      }
+      alert(`Deleted ${deleted} leave record(s).`);
+    });
+
   </script>
 </head>
 <body class="container py-3">
@@ -351,9 +385,8 @@
         <input id="quotaDays" type="number" class="form-control mb-2" placeholder="Days">
         <button id="updateQuotaBtn" class="btn btn-info">Update Quota</button>
       </div>
-    </div>
-
-    <!-- View Staff Leave Balance -->
+      </div>
+  <!-- View Staff Leave Balance -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>View Staff Leave Balance</h6>
