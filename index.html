@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Staff Leave Application</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <script type="module">
@@ -667,6 +668,249 @@
     });
 
     document.addEventListener("DOMContentLoaded", loadDeleteUserList);
+  </script>
+
+  <!-- Enhanced Responsive Styles for App-Like Experience -->
+  <style>
+    /* Default styles for larger screens (laptops) */
+    body {
+      font-size: 16px;
+      overscroll-behavior: none; /* Prevent browser pull-to-refresh */
+    }
+    .card-body {
+      padding: 1.5rem;
+    }
+    .form-control, .btn {
+      font-size: 1rem;
+      min-height: 40px;
+      transition: all 0.2s ease-in-out; /* Smooth transitions */
+    }
+    .form-control {
+      width: 100%;
+      max-width: 300px;
+    }
+    .btn {
+      padding: 0.5rem 1rem;
+      border-radius: 8px; /* Rounded buttons */
+    }
+    h3, h6 {
+      font-size: 1.5rem;
+    }
+    .list-group-item {
+      font-size: 1rem;
+      transition: background-color 0.2s ease; /* Smooth list item transitions */
+    }
+
+    /* App-like header for phones */
+    .app-header {
+      display: none; /* Hidden on laptops */
+    }
+
+    /* Bottom navigation for staff on phones */
+    .app-nav {
+      display: none; /* Hidden by default */
+    }
+
+    /* Phone screens (width < 768px) */
+    @media (max-width: 767.98px) {
+      body {
+        font-size: 14px;
+        margin: 0;
+        padding-top: 60px; /* Space for fixed header */
+        padding-bottom: 60px; /* Space for bottom nav */
+        -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+      }
+      .container {
+        padding: 0.5rem;
+        max-width: 100%;
+      }
+      .card {
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1); /* Subtle shadow for app feel */
+        margin-bottom: 1rem;
+      }
+      .card-body {
+        padding: 1rem;
+      }
+      .form-control, .btn {
+        font-size: 0.9rem;
+        min-height: 44px; /* Larger touch targets */
+        width: 100%;
+        max-width: none; /* Full width for inputs */
+      }
+      .btn {
+        padding: 0.5rem;
+        border-radius: 10px;
+        touch-action: manipulation; /* Better tap response */
+      }
+      .btn:hover, .btn:active {
+        transform: scale(0.98); /* Subtle tap feedback */
+      }
+      h3 {
+        font-size: 1.2rem;
+      }
+      h6 {
+        font-size: 1rem;
+      }
+      .list-group-item {
+        font-size: 0.9rem;
+        border-radius: 8px;
+        margin-bottom: 0.5rem;
+      }
+      /* Fixed app-like header */
+      .app-header {
+        display: flex;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background: #007bff; /* Primary color */
+        color: white;
+        padding: 0.5rem 1rem;
+        z-index: 1000;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      }
+      .app-header h3 {
+        margin: 0;
+        font-size: 1.2rem;
+      }
+      .app-header #logoutBtn {
+        font-size: 0.9rem;
+        padding: 0.4rem 0.8rem;
+        background: #6c757d; /* Secondary color */
+      }
+      /* Bottom navigation for staff */
+      #staffSection .app-nav {
+        display: flex;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #f8f9fa;
+        border-top: 1px solid #dee2e6;
+        padding: 0.5rem;
+        z-index: 1000;
+        justify-content: space-around;
+      }
+      .app-nav button {
+        font-size: 0.9rem;
+        padding: 0.5rem;
+        flex: 1;
+        margin: 0 0.25rem;
+        border-radius: 8px;
+      }
+      /* Hide original h3 and logout button on phones */
+      h3:not(.app-header h3), #logoutSection:not(.app-header #logoutSection) {
+        display: none;
+      }
+      /* Smooth transitions for cards */
+      .card {
+        transition: transform 0.2s ease;
+      }
+      .card:hover {
+        transform: translateY(-2px); /* Subtle lift effect */
+      }
+    }
+
+    /* Small phones (width < 576px) */
+    @media (max-width: 575.98px) {
+      body {
+        font-size: 12px;
+      }
+      .form-control, .btn {
+        font-size: 0.8rem;
+        min-height: 40px;
+      }
+      h3.app-header {
+        font-size: 1rem;
+      }
+      h6 {
+        font-size: 0.9rem;
+      }
+      .list-group-item {
+        font-size: 0.8rem;
+      }
+      .container {
+        padding: 0.25rem;
+      }
+      .app-nav button {
+        font-size: 0.8rem;
+      }
+    }
+
+    /* Larger screens (laptops, >= 992px) */
+    @media (min-width: 992px) {
+      .form-control {
+        max-width: 400px;
+      }
+      .btn {
+        max-width: 250px;
+      }
+      .card-body {
+        padding: 2rem;
+      }
+    }
+  </style>
+
+  <!-- App-Like Navigation Script -->
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      // Add bottom navigation for staff on phones
+      function setupAppNav() {
+        if (window.innerWidth < 768 && document.getElementById("staffSection").style.display === "block") {
+          let nav = document.querySelector(".app-nav");
+          if (!nav) {
+            nav = document.createElement("div");
+            nav.className = "app-nav";
+            nav.innerHTML = `
+              <button onclick="scrollToSection('applyLeave')">Apply Leave</button>
+              <button onclick="scrollToSection('leaveBalance')">Balance</button>
+              <button onclick="scrollToSection('myRequests')">Requests</button>
+            `;
+            document.body.appendChild(nav);
+          }
+        } else {
+          const nav = document.querySelector(".app-nav");
+          if (nav) nav.remove();
+        }
+      }
+
+      // Scroll to section for bottom nav
+      window.scrollToSection = function(id) {
+        const section = document.querySelector(`#${id}`);
+        if (section) {
+          const headerHeight = document.querySelector(".app-header")?.offsetHeight || 0;
+          window.scrollTo({
+            top: section.offsetTop - headerHeight - 10,
+            behavior: "smooth"
+          });
+        }
+      };
+
+      // Update layout and nav on load and resize
+      setupAppNav();
+      window.addEventListener("resize", setupAppNav);
+
+      // Update header with logout button visibility
+      function updateHeader() {
+        const header = document.querySelector(".app-header");
+        if (header) {
+          const logoutBtn = header.querySelector("#logoutSection");
+          if (document.getElementById("logoutSection").style.display === "block") {
+            logoutBtn.style.display = "block";
+          } else {
+            logoutBtn.style.display = "none";
+          }
+        }
+      }
+
+      updateHeader();
+      // Update header on login/logout
+      const observer = new MutationObserver(updateHeader);
+      observer.observe(document.getElementById("logoutSection"), { attributes: true });
+    });
   </script>
 </body>
 </html>
