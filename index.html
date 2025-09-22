@@ -383,3 +383,30 @@
           <select id="reportUser" class="form-control me-2"></select>
           <button id="downloadBtn" class="btn btn-success">Download CSV</button>
         </div>
+        <!-- Responsive script -->
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    // Make all .d-flex containers stack on small screens automatically
+    function adjustLayout() {
+      const flexBlocks = document.querySelectorAll(".d-flex");
+      flexBlocks.forEach(block => {
+        if (window.innerWidth < 768) {
+          block.classList.add("flex-column");
+          block.classList.remove("flex-row");
+        } else {
+          block.classList.add("flex-row");
+          block.classList.remove("flex-column");
+        }
+      });
+    }
+
+    // Run once at start
+    adjustLayout();
+
+    // Adjust on window resize
+    window.addEventListener("resize", adjustLayout);
+  });
+  </script>
+
+</body>
+</html>
