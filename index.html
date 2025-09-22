@@ -6,7 +6,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-    import { getFirestore, collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+    import { getFirestore, collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
     // Firebase config
     const firebaseConfig = {
@@ -54,6 +54,42 @@
     });
 
     // =================== STAFF APPLY LEAVE ===================
+    async function canApplyLeave(username, fromDate, toDate) {
+      const leaveSnap = await getDocs(collection(db, "leaves"));
+      const dateLimitSnap = await getDocs(collection(db, "dateLimits"));
+
+      // Build dateLimits map
+      let dateLimits = {};
+      dateLimitSnap.forEach(d => {
+        dateLimits[d.id] = d.data().maxStaff || 1;
+      });
+
+      // Generate all dates in range
+      const start = new Date(fromDate);
+      const end = new Date(toDate);
+      const appliedDates = [];
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        appliedDates.push(d.toISOString().split("T")[0]);
+      }
+
+      // Check each date
+      for (const date of appliedDates) {
+        const maxStaff = dateLimits[date] || 1;
+        let count = 0;
+        leaveSnap.forEach(ld => {
+          const data = ld.data();
+          const leaveStart = new Date(data.from);
+          const leaveEnd = new Date(data.to);
+          const current = new Date(date);
+          if (current >= leaveStart && current <= leaveEnd && data.status !== "Rejected") {
+            count++;
+          }
+        });
+        if (count >= maxStaff) return { allowed: false, date };
+      }
+      return { allowed: true };
+    }
+
     document.getElementById("applyBtn").addEventListener("click", async () => {
       const type = document.getElementById("leaveType").value;
       const from = document.getElementById("fromDate").value;
@@ -61,17 +97,20 @@
       const reason = document.getElementById("reason").value;
       const duration = document.getElementById("leaveDuration").value;
 
-      if (!from || !to) return alert("Select dates!");
+      if (!from || !to) return alert("Select both From and To dates!");
+
+      const result = await canApplyLeave(currentUser.username, from, to);
+      if (!result.allowed) return alert(`Maximum staff already applied for ${result.date}. Contact HR.`);
 
       const leaveId = `${currentUser.username}_${Date.now()}`;
-      const applyDate = new Date().toISOString().split("T")[0]; // Store date only
+      const applyDate = new Date().toISOString().split("T")[0];
 
       await setDoc(doc(db, "leaves", leaveId), {
         username: currentUser.username,
         type, from, to, reason,
         duration,
         status: "Pending",
-        applyDate,  // ✅ New field
+        applyDate,
         createdAt: new Date().toISOString()
       });
 
@@ -249,6 +288,27 @@
       loadUserList();
     });
 
+    // =================== HR: Check Staff Applied on Date ===================
+    document.getElementById("checkDateBtn").addEventListener("click", async () => {
+      const date = document.getElementById("checkDate").value;
+      if (!date) return alert("Please select a date");
+
+      const snap = await getDocs(collection(db, "leaves"));
+      let list = [];
+      snap.forEach(d => {
+        const data = d.data();
+        if (date >= data.from && date <= data.to) {
+          list.push(data.username);
+        }
+      });
+
+      if (list.length === 0) {
+        alert(`No staff applied leave on ${date}`);
+      } else {
+        alert(`Staff on leave on ${date}: ${list.join(", ")}`);
+      }
+    });
+
     // =================== REPORT DOWNLOAD ===================
     document.getElementById("downloadBtn").addEventListener("click", async () => {
       const from = document.getElementById("reportFrom").value;
@@ -301,6 +361,42 @@
       alert(`Deleted ${deleted} leave record(s).`);
     });
 
+    // =================== LOAD CURRENT MAX STAFF LIMITS ===================
+    async function loadMaxDates() {
+      const list = document.getElementById("maxDateList");
+      list.innerHTML = "";
+      const snap = await getDocs(collection(db, "dateLimits"));
+      let dateCount = 0;
+      snap.forEach(d => {
+        const data = d.data();
+        const li = document.createElement("li");
+        li.className = "list-group-item";
+        li.textContent = `${d.id}: Max Staff = ${data.maxStaff}`;
+        list.appendChild(li);
+        dateCount++;
+      });
+      // Display total number of dates with max staff limits
+      const countDisplay = document.createElement("li");
+      countDisplay.className = "list-group-item";
+      countDisplay.textContent = `Total Dates with Max Staff Limits: ${dateCount}`;
+      list.appendChild(countDisplay);
+    }
+
+    // Run once on page load
+    loadMaxDates();
+
+    // =================== HR DELETE MAX STAFF ===================
+    document.getElementById("deleteMaxBtn").addEventListener("click", async () => {
+      const date = document.getElementById("deleteMaxDate").value;
+      if (!date) return alert("Please select a date to delete");
+
+      const limitDoc = await getDoc(doc(db, "dateLimits", date));
+      if (!limitDoc.exists()) return alert("No max staff set for this date");
+
+      await deleteDoc(doc(db, "dateLimits", date));
+      alert(`Max staff limit removed for ${date}`);
+      loadMaxDates();
+    });
   </script>
 </head>
 <body class="container py-3">
@@ -385,8 +481,9 @@
         <input id="quotaDays" type="number" class="form-control mb-2" placeholder="Days">
         <button id="updateQuotaBtn" class="btn btn-info">Update Quota</button>
       </div>
-      </div>
-  <!-- View Staff Leave Balance -->
+    </div>
+
+    <!-- View Staff Leave Balance -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>View Staff Leave Balance</h6>
@@ -395,6 +492,7 @@
       </div>
     </div>
 
+    <!-- Leave Requests (All Staff) -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>Leave Requests (All Staff)</h6>
@@ -407,6 +505,7 @@
       </div>
     </div>
 
+    <!-- Download Leave Report -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>Download Leave Report</h6>
@@ -416,89 +515,158 @@
           <select id="reportUser" class="form-control me-2"></select>
           <button id="downloadBtn" class="btn btn-success">Download CSV</button>
         </div>
-        <!-- Responsive script -->
+      </div>
+    </div>
+
+    <!-- Bulk Delete Section -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6>Bulk Delete Leave Records</h6>
+        <div class="d-flex mb-2 flex-wrap">
+          <input id="deleteFrom" type="date" class="form-control me-2 mb-2">
+          <input id="deleteTo" type="date" class="form-control me-2 mb-2">
+          <select id="deleteUser" class="form-control me-2 mb-2"></select>
+          <button id="deleteBtn" class="btn btn-danger mb-2">Delete Records</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- HR: Set Max Staff Allowed for a Particular Date -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6>Set Max Staff Allowed for a Particular Date</h6>
+        <div class="d-flex mb-2 flex-wrap">
+          <input id="maxDate" type="date" class="form-control me-2 mb-2" placeholder="Select Date">
+          <input id="maxStaff" type="number" class="form-control me-2 mb-2" placeholder="Max Staff Allowed">
+          <button id="setMaxBtn" class="btn btn-info mb-2">Set Max</button>
+        </div>
+        <ul id="maxDateList" class="list-group"></ul>
+      </div>
+    </div>
+
+    <!-- HR: Delete Max Staff Limit for a Particular Date -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6>Delete Max Staff Limit for a Particular Date</h6>
+        <div class="d-flex mb-2 flex-wrap">
+          <input id="deleteMaxDate" type="date" class="form-control me-2 mb-2" placeholder="Select Date">
+          <button id="deleteMaxBtn" class="btn btn-danger mb-2">Delete Max</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- HR: Check Staff Applied on Date -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6>Check Staff Applied on Date</h6>
+        <div class="d-flex mb-2 flex-wrap">
+          <input id="checkDate" type="date" class="form-control me-2 mb-2">
+          <button id="checkDateBtn" class="btn btn-info mb-2">Check</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- HR: Approve Max Staff for a Date Range -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6>Approve Max Staff for a Date Range</h6>
+        <div class="d-flex mb-2 flex-wrap">
+          <input id="approveMaxFromDate" type="date" class="form-control me-2 mb-2" placeholder="From Date">
+          <input id="approveMaxToDate" type="date" class="form-control me-2 mb-2" placeholder="To Date">
+          <input id="approveMaxStaffRange" type="number" class="form-control me-2 mb-2" placeholder="Max Staff Allowed">
+          <button id="approveMaxRangeBtn" class="btn btn-primary mb-2">Approve Max Staff for Range</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Responsive script -->
   <script>
-  document.addEventListener("DOMContentLoaded", function () {
-    // Make all .d-flex containers stack on small screens automatically
-    function adjustLayout() {
-      const flexBlocks = document.querySelectorAll(".d-flex");
-      flexBlocks.forEach(block => {
-        if (window.innerWidth < 768) {
-          block.classList.add("flex-column");
-          block.classList.remove("flex-row");
-        } else {
-          block.classList.add("flex-row");
-          block.classList.remove("flex-column");
-        }
+    document.addEventListener("DOMContentLoaded", function () {
+      // Make all .d-flex containers stack on small screens automatically
+      function adjustLayout() {
+        const flexBlocks = document.querySelectorAll(".d-flex");
+        flexBlocks.forEach(block => {
+          if (window.innerWidth < 768) {
+            block.classList.add("flex-column");
+            block.classList.remove("flex-row");
+          } else {
+            block.classList.add("flex-row");
+            block.classList.remove("flex-column");
+          }
+        });
+      }
+
+      // Run once at start
+      adjustLayout();
+
+      // Adjust on window resize
+      window.addEventListener("resize", adjustLayout);
+    });
+  </script>
+
+  <script type="module">
+    import { getFirestore, collection, doc, setDoc, getDocs, getDoc, deleteDoc } 
+    from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+    const db = getFirestore();
+
+    // Populate deleteUser dropdown
+    async function loadDeleteUserList() {
+      const snap = await getDocs(collection(db, "users"));
+      const sel = document.getElementById("deleteUser");
+      sel.innerHTML = `<option value="">All Users</option>`;
+      snap.forEach(u => {
+        sel.innerHTML += `<option value="${u.id}">${u.id}</option>`;
       });
     }
 
-    // Run once at start
-    adjustLayout();
+    // HR sets max staff for a single date
+    document.getElementById("setMaxBtn").addEventListener("click", async () => {
+      const date = document.getElementById("maxDate").value;
+      const max = parseInt(document.getElementById("maxStaff").value);
+      if (!date || !max || max < 1) return alert("Enter valid date and number");
 
-    // Adjust on window resize
-    window.addEventListener("resize", adjustLayout);
-  });
+      await setDoc(doc(db, "dateLimits", date), { maxStaff: max });
+      alert(`Max staff for ${date} set to ${max}`);
+      loadMaxDates();
+    });
+
+    // HR approves max staff for a date range
+    document.getElementById("approveMaxRangeBtn").addEventListener("click", async () => {
+      const fromDate = document.getElementById("approveMaxFromDate").value;
+      const toDate = document.getElementById("approveMaxToDate").value;
+      const max = parseInt(document.getElementById("approveMaxStaffRange").value);
+
+      if (!fromDate || !toDate || !max || max < 1) {
+        alert("Please select valid From and To dates and a number of staff.");
+        return;
+      }
+
+      if (new Date(fromDate) > new Date(toDate)) {
+        alert("From Date must be before or equal to To Date.");
+        return;
+      }
+
+      // Generate all dates in the range
+      const start = new Date(fromDate);
+      const end = new Date(toDate);
+      const dates = [];
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        dates.push(d.toISOString().split("T")[0]);
+      }
+
+      // Set max staff for each date
+      for (const date of dates) {
+        await setDoc(doc(db, "dateLimits", date), { maxStaff: max });
+      }
+
+      alert(`Approved max ${max} staff for ${dates.length} date(s) from ${fromDate} to ${toDate}`);
+      loadMaxDates();
+    });
+
+    document.addEventListener("DOMContentLoaded", loadDeleteUserList);
   </script>
-
 </body>
 </html>
-        <!-- Bulk Delete Section -->
-<div class="card mb-3">
-  <div class="card-body">
-    <h6>Bulk Delete Leave Records</h6>
-    <div class="d-flex mb-2 flex-wrap">
-      <input id="deleteFrom" type="date" class="form-control me-2 mb-2">
-      <input id="deleteTo" type="date" class="form-control me-2 mb-2">
-      <select id="deleteUser" class="form-control me-2 mb-2"></select>
-      <button id="deleteBtn" class="btn btn-danger mb-2">Delete Records</button>
-    </div>
-  </div>
-</div>
-
-<script type="module">
-  import { getFirestore, collection, getDocs, deleteDoc, doc } 
-  from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
-
-  const db = getFirestore();
-
-  // Delete leave requests in range
-  document.getElementById("deleteBtn").addEventListener("click", async () => {
-    const from = document.getElementById("deleteFrom").value;
-    const to = document.getElementById("deleteTo").value;
-    const uname = document.getElementById("deleteUser").value;
-
-    if (!from || !to) {
-      alert("Please select both From and To dates.");
-      return;
-    }
-
-    if (!confirm(`Delete all leave records for ${uname || "ALL USERS"} between ${from} and ${to}?`)) return;
-
-    const snap = await getDocs(collection(db, "leaves"));
-    let deleted = 0;
-    snap.forEach(async (d) => {
-      const data = d.data();
-      if (new Date(data.from) >= new Date(from) && new Date(data.to) <= new Date(to)) {
-        if (!uname || data.username === uname) {
-          await deleteDoc(doc(db, "leaves", d.id));
-          deleted++;
-        }
-      }
-    });
-
-    alert(`Deleted ${deleted} leave record(s).`);
-  });
-
-  // Populate deleteUser dropdown
-  async function loadDeleteUserList() {
-    const snap = await getDocs(collection(db, "users"));
-    const sel = document.getElementById("deleteUser");
-    sel.innerHTML = `<option value="">All Users</option>`;
-    snap.forEach(u => {
-      sel.innerHTML += `<option value="${u.id}">${u.id}</option>`;
-    });
-  }
-
-  document.addEventListener("DOMContentLoaded", loadDeleteUserList);
-</script>
