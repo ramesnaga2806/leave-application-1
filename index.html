@@ -410,3 +410,62 @@
 
 </body>
 </html>
+        <!-- Bulk Delete Section -->
+<div class="card mb-3">
+  <div class="card-body">
+    <h6>Bulk Delete Leave Records</h6>
+    <div class="d-flex mb-2 flex-wrap">
+      <input id="deleteFrom" type="date" class="form-control me-2 mb-2">
+      <input id="deleteTo" type="date" class="form-control me-2 mb-2">
+      <select id="deleteUser" class="form-control me-2 mb-2"></select>
+      <button id="deleteBtn" class="btn btn-danger mb-2">Delete Records</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { getFirestore, collection, getDocs, deleteDoc, doc } 
+  from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  const db = getFirestore();
+
+  // Delete leave requests in range
+  document.getElementById("deleteBtn").addEventListener("click", async () => {
+    const from = document.getElementById("deleteFrom").value;
+    const to = document.getElementById("deleteTo").value;
+    const uname = document.getElementById("deleteUser").value;
+
+    if (!from || !to) {
+      alert("Please select both From and To dates.");
+      return;
+    }
+
+    if (!confirm(`Delete all leave records for ${uname || "ALL USERS"} between ${from} and ${to}?`)) return;
+
+    const snap = await getDocs(collection(db, "leaves"));
+    let deleted = 0;
+    snap.forEach(async (d) => {
+      const data = d.data();
+      if (new Date(data.from) >= new Date(from) && new Date(data.to) <= new Date(to)) {
+        if (!uname || data.username === uname) {
+          await deleteDoc(doc(db, "leaves", d.id));
+          deleted++;
+        }
+      }
+    });
+
+    alert(`Deleted ${deleted} leave record(s).`);
+  });
+
+  // Populate deleteUser dropdown
+  async function loadDeleteUserList() {
+    const snap = await getDocs(collection(db, "users"));
+    const sel = document.getElementById("deleteUser");
+    sel.innerHTML = `<option value="">All Users</option>`;
+    snap.forEach(u => {
+      sel.innerHTML += `<option value="${u.id}">${u.id}</option>`;
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", loadDeleteUserList);
+</script>
