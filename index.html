@@ -125,23 +125,103 @@
     async function loadMyRequests() {
       const list = document.getElementById("myRequests");
       list.innerHTML = "";
-      const fromF = document.getElementById("myFrom").value;
-      const toF = document.getElementById("myTo").value;
+      const currentYear = new Date().getFullYear();
 
+      // Fetch leave requests
       const snap = await getDocs(collection(db, "leaves"));
+      let requests = [];
+
+      // Filter requests for the current user and current year
       snap.forEach((d) => {
         const data = d.data();
         if (data.username === currentUser.username) {
-          if (fromF && new Date(data.from) < new Date(fromF)) return;
-          if (toF && new Date(data.to) > new Date(toF)) return;
+          const applyYear = new Date(data.applyDate || data.createdAt).getFullYear();
+          if (applyYear === currentYear) {
+            requests.push({ id: d.id, ...data });
+          }
+        }
+      });
+
+      // Debug log to inspect retrieved requests
+      console.log("Retrieved requests:", requests);
+
+      // Sort by createdAt (or applyDate as fallback) in descending order (Z to A) for precise timestamp comparison
+      if (currentUser.role === "staff") {
+        requests.sort((a, b) => {
+          const dateA = a.createdAt ? new Date(a.createdAt) : new Date(a.applyDate);
+          const dateB = b.createdAt ? new Date(b.createdAt) : new Date(b.applyDate);
+          return dateB - dateA; // Newest first (Z to A), including time of day
+        });
+        requests = requests.slice(0, 10); // Limit to 10 for staff
+      }
+
+      // Debug log to inspect sorted requests
+      console.log("Sorted requests:", requests);
+
+      // Display the requests
+      if (requests.length === 0) {
+        list.innerHTML = "<li class='list-group-item'>No leave requests found for the current year</li>";
+      } else {
+        requests.forEach((data) => {
           const li = document.createElement("li");
           li.className = "list-group-item";
+          // Apply color based on status
+          if (data.status === "Rejected") {
+            li.classList.add("text-danger");
+          } else if (data.status === "Approved") {
+            li.classList.add("text-success");
+          }
           li.textContent = `${data.from} → ${data.to} | ${data.type} | ${data.duration} | ${data.status} | Applied: ${data.applyDate || "-"}`;
+          list.appendChild(li);
+        });
+      }
+    }
+
+    // =================== STAFF LEAVE HISTORY ===================
+    async function loadStaffLeaveHistory() {
+      const list = document.getElementById("staffHistoryList");
+      list.innerHTML = "";
+      const from = document.getElementById("historyFromStaff").value;
+      const to = document.getElementById("historyToStaff").value;
+
+      // Validate date range
+      if (from && to && new Date(from) > new Date(to)) {
+        alert("To date must be greater than or equal to From date!");
+        return;
+      }
+
+      // Fetch leave requests
+      const snap = await getDocs(collection(db, "leaves"));
+      let found = false;
+      snap.forEach(d => {
+        const data = d.data();
+        if (data.username === currentUser.username) {
+          if (from && new Date(data.from) < new Date(from)) return;
+          if (to && new Date(data.to) > new Date(to)) return;
+          found = true;
+          const li = document.createElement("li");
+          li.className = "list-group-item";
+          // Apply color based on status
+          if (data.status === "Rejected") {
+            li.classList.add("text-danger");
+          } else if (data.status === "Approved") {
+            li.classList.add("text-success");
+          }
+          li.textContent = `${data.from} → ${data.to} | ${data.type} | ${data.duration} | ${data.status} | Applied: ${data.applyDate || "-"} | Reason: ${data.reason}`;
           list.appendChild(li);
         }
       });
+
+      if (!found) {
+        list.innerHTML = "<li class='list-group-item'>No leave records found for the selected date range</li>";
+      }
     }
-    document.getElementById("myFilterBtn").addEventListener("click", loadMyRequests);
+    document.addEventListener("DOMContentLoaded", () => {
+      const viewStaffHistoryBtn = document.getElementById("viewStaffHistoryBtn");
+      if (viewStaffHistoryBtn) {
+        viewStaffHistoryBtn.addEventListener("click", loadStaffLeaveHistory);
+      }
+    });
 
     async function showBalance() {
       const userDoc = await getDoc(doc(db, "users", currentUser.username));
@@ -501,15 +581,22 @@
         <div id="balance"></div>
       </div>
     </div>
-    <div class="card">
+    <div class="card mb-3">
       <div class="card-body">
         <h6>My Leave Requests</h6>
-        <div class="d-flex mb-2">
-          <input id="myFrom" type="date" class="form-control me-2">
-          <input id="myTo" type="date" class="form-control me-2">
-          <button id="myFilterBtn" class="btn btn-sm btn-secondary">Filter</button>
-        </div>
         <ul id="myRequests" class="list-group"></ul>
+      </div>
+    </div>
+    <!-- Staff Leave History Section -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6>Leave History</h6>
+        <div class="d-flex mb-2">
+          <input id="historyFromStaff" type="date" class="form-control me-2">
+          <input id="historyToStaff" type="date" class="form-control me-2">
+          <button id="viewStaffHistoryBtn" class="btn btn-info">View</button>
+        </div>
+        <ul id="staffHistoryList" class="list-group"></ul>
       </div>
     </div>
   </div>
@@ -942,6 +1029,7 @@
               <button onclick="scrollToSection('applyLeave')">Apply Leave</button>
               <button onclick="scrollToSection('leaveBalance')">Balance</button>
               <button onclick="scrollToSection('myRequests')">Requests</button>
+              <button onclick="scrollToSection('staffLeaveHistory')">History</button>
             `;
             document.body.appendChild(nav);
           }
