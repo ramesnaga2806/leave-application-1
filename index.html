@@ -40,6 +40,8 @@
             loadMyRequests();
           } else {
             document.getElementById("adminSection").style.display = "block";
+            await resetAllQuotasIfNeeded();
+            await deleteOldLeaves();
             loadAllRequests();
             loadUserList();
           }
@@ -99,6 +101,7 @@
       const duration = document.getElementById("leaveDuration").value;
 
       if (!from || !to) return alert("Select both From and To dates!");
+      if (new Date(from) > new Date(to)) return alert("To date must be greater than or equal to From date!");
 
       const result = await canApplyLeave(currentUser.username, from, to);
       if (!result.allowed) return alert(`Maximum staff already applied for ${result.date}. Contact HR.`);
@@ -163,7 +166,8 @@
         quota: {
           Annual: 14, Medical: 10, Emergency: 5, Unpaid: 0,
           Maternity: 60, Paternity: 7, Compassionate: 3
-        }
+        },
+        last_reset: new Date().getFullYear()
       });
       alert("User added with default quota!");
       loadUserList();
@@ -205,44 +209,43 @@
       const t = document.getElementById("adminTo").value;
 
       const snap = await getDocs(collection(db, "leaves"));
-      snap.forEach(async (d) => {
+      for (const d of snap.docs) {
         const data = d.data();
-        if (f && new Date(data.from) < new Date(f)) return;
-        if (t && new Date(data.to) > new Date(t)) return;
+        if (f && new Date(data.from) < new Date(f)) continue;
+        if (t && new Date(data.to) > new Date(t)) continue;
+        if (data.status !== "Pending") continue;
         const li = document.createElement("li");
         li.className = "list-group-item";
         li.textContent = `${data.username} | ${data.from} → ${data.to} | ${data.type} | ${data.duration} | ${data.status} | Applied: ${data.applyDate || "-"}`;
 
-        if (data.status === "Pending") {
-          const approveBtn = document.createElement("button");
-          approveBtn.textContent = "Approve";
-          approveBtn.className = "btn btn-sm btn-success mx-1";
-          approveBtn.onclick = async () => {
-            const uref = doc(db, "users", data.username);
-            const usnap = await getDoc(uref);
-            if (usnap.exists()) {
-              const quota = usnap.data().quota || {};
-              const deduction = data.duration === "Half Day" ? 0.5 : 1;
-              if (quota[data.type] >= deduction) {
-                quota[data.type] -= deduction;
-                await updateDoc(uref, { quota });
-              }
+        const approveBtn = document.createElement("button");
+        approveBtn.textContent = "Approve";
+        approveBtn.className = "btn btn-sm btn-success mx-1";
+        approveBtn.onclick = async () => {
+          const uref = doc(db, "users", data.username);
+          const usnap = await getDoc(uref);
+          if (usnap.exists()) {
+            const quota = usnap.data().quota || {};
+            const deduction = data.duration === "Half Day" ? 0.5 : 1;
+            if (quota[data.type] >= deduction) {
+              quota[data.type] -= deduction;
+              await updateDoc(uref, { quota });
             }
-            await updateDoc(doc(db, "leaves", d.id), { status: "Approved" });
-            loadAllRequests();
-          };
-          const rejectBtn = document.createElement("button");
-          rejectBtn.textContent = "Reject";
-          rejectBtn.className = "btn btn-sm btn-danger mx-1";
-          rejectBtn.onclick = async () => {
-            await updateDoc(doc(db, "leaves", d.id), { status: "Rejected" });
-            loadAllRequests();
-          };
-          li.appendChild(approveBtn);
-          li.appendChild(rejectBtn);
-        }
+          }
+          await updateDoc(doc(db, "leaves", d.id), { status: "Approved" });
+          loadAllRequests();
+        };
+        const rejectBtn = document.createElement("button");
+        rejectBtn.textContent = "Reject";
+        rejectBtn.className = "btn btn-sm btn-danger mx-1";
+        rejectBtn.onclick = async () => {
+          await updateDoc(doc(db, "leaves", d.id), { status: "Rejected" });
+          loadAllRequests();
+        };
+        li.appendChild(approveBtn);
+        li.appendChild(rejectBtn);
         list.appendChild(li);
-      });
+      }
     }
     document.getElementById("adminFilterBtn").addEventListener("click", loadAllRequests);
 
@@ -251,6 +254,7 @@
       const selects = [
         document.getElementById("quotaUser"),
         document.getElementById("reportUser"),
+        document.getElementById("historyUser"),
         document.getElementById("balanceUser"),
         document.getElementById("deleteUser")
       ];
@@ -263,6 +267,8 @@
       });
       if (document.getElementById("reportUser"))
         document.getElementById("reportUser").innerHTML = '<option value="">All</option>' + document.getElementById("reportUser").innerHTML;
+      if (document.getElementById("historyUser"))
+        document.getElementById("historyUser").innerHTML = '<option value="">All</option>' + document.getElementById("historyUser").innerHTML;
       if (document.getElementById("deleteUser"))
         document.getElementById("deleteUser").innerHTML = '<option value="">All Users</option>' + document.getElementById("deleteUser").innerHTML;
     }
@@ -335,6 +341,32 @@
       a.click();
     });
 
+    // =================== VIEW LEAVE HISTORY ===================
+    document.getElementById("viewHistoryBtn").addEventListener("click", async () => {
+      const from = document.getElementById("historyFrom").value;
+      const to = document.getElementById("historyTo").value;
+      const uname = document.getElementById("historyUser").value;
+
+      const list = document.getElementById("historyList");
+      list.innerHTML = "";
+      const snap = await getDocs(collection(db, "leaves"));
+      let found = false;
+      snap.forEach(d => {
+        const data = d.data();
+        if (from && new Date(data.from) < new Date(from)) return;
+        if (to && new Date(data.to) > new Date(to)) return;
+        if (uname && data.username !== uname) return;
+        found = true;
+        const li = document.createElement("li");
+        li.className = "list-group-item";
+        li.textContent = `${data.username} | ${data.from} → ${data.to} | ${data.type} | ${data.duration} | ${data.status} | Applied: ${data.applyDate || "-"} | Reason: ${data.reason}`;
+        list.appendChild(li);
+      });
+      if (!found) {
+        list.innerHTML = "<li class='list-group-item'>No leave records found</li>";
+      }
+    });
+
     // =================== BULK DELETE ===================
     document.getElementById("deleteBtn").addEventListener("click", async () => {
       const from = document.getElementById("deleteFrom").value;
@@ -376,7 +408,6 @@
         list.appendChild(li);
         dateCount++;
       });
-      // Display total number of dates with max staff limits
       const countDisplay = document.createElement("li");
       countDisplay.className = "list-group-item";
       countDisplay.textContent = `Total Dates with Max Staff Limits: ${dateCount}`;
@@ -398,6 +429,36 @@
       alert(`Max staff limit removed for ${date}`);
       loadMaxDates();
     });
+
+    // =================== AUTO DELETE OLD DATA ===================
+    async function deleteOldLeaves() {
+      const threeYearsAgo = new Date();
+      threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
+      const iso = threeYearsAgo.toISOString();
+
+      const snap = await getDocs(collection(db, "leaves"));
+      for (const d of snap.docs) {
+        if (d.data().createdAt < iso) {
+          await deleteDoc(d.ref);
+        }
+      }
+    }
+
+    // =================== ANNUAL QUOTA RESET ===================
+    async function resetAllQuotasIfNeeded() {
+      const currentYear = new Date().getFullYear();
+      const snap = await getDocs(collection(db, "users"));
+      for (const u of snap.docs) {
+        const data = u.data();
+        if (!data.last_reset || data.last_reset < currentYear) {
+          const defaultQuota = {
+            Annual: 14, Medical: 10, Emergency: 5, Unpaid: 0,
+            Maternity: 60, Paternity: 7, Compassionate: 3
+          };
+          await updateDoc(u.ref, { quota: defaultQuota, last_reset: currentYear });
+        }
+      }
+    }
   </script>
 </head>
 <body class="container py-3">
@@ -506,6 +567,20 @@
       </div>
     </div>
 
+    <!-- View Leave History -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6>View Leave History</h6>
+        <div class="d-flex mb-2">
+          <input id="historyFrom" type="date" class="form-control me-2">
+          <input id="historyTo" type="date" class="form-control me-2">
+          <select id="historyUser" class="form-control me-2"></select>
+          <button id="viewHistoryBtn" class="btn btn-info">View</button>
+        </div>
+        <ul id="historyList" class="list-group"></ul>
+      </div>
+    </div>
+
     <!-- Download Leave Report -->
     <div class="card mb-3">
       <div class="card-body">
@@ -579,7 +654,6 @@
         </div>
       </div>
     </div>
-
   </div>
 
   <!-- Responsive script -->
