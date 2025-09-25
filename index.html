@@ -61,12 +61,10 @@
       const leaveSnap = await getDocs(collection(db, "leaves"));
       const dateLimitSnap = await getDocs(collection(db, "dateLimits"));
 
-      // Build dateLimits map for Annual Leave only
+      // Build dateLimits map
       let dateLimits = {};
       dateLimitSnap.forEach(d => {
-        if (d.data().leaveType === "Annual") { // Only consider limits for Annual Leave
-          dateLimits[d.id] = d.data().maxStaff || 1; // Use stored maxStaff, default to 1 if invalid
-        }
+        dateLimits[d.id] = d.data().maxStaff || 1;
       });
 
       // Generate all dates in range
@@ -77,17 +75,17 @@
         appliedDates.push(d.toISOString().split("T")[0]);
       }
 
-      // Check each date for Annual Leave only
+      // Check each date
       for (const date of appliedDates) {
-        const maxStaff = dateLimits[date] || 1; // Default to 1 staff if no limit set
+        const maxStaff = dateLimits[date] || 1;
         let count = 0;
         leaveSnap.forEach(ld => {
           const data = ld.data();
           const leaveStart = new Date(data.from);
           const leaveEnd = new Date(data.to);
           const current = new Date(date);
-          if (data.type === "Annual" && current >= leaveStart && current <= leaveEnd && data.status !== "Rejected") {
-            count++; // Count only Annual Leave requests (blocks second staff on 01.11.2025 if no limit set)
+          if (current >= leaveStart && current <= leaveEnd && data.status !== "Rejected") {
+            count++;
           }
         });
         if (count >= maxStaff) return { allowed: false, date };
@@ -105,11 +103,38 @@
       if (!from || !to) return alert("Select both From and To dates!");
       if (new Date(from) > new Date(to)) return alert("To date must be greater than or equal to From date!");
 
-      // Only check staffing limits for Annual Leave (blocks second staff on 01.11.2025, allows Medical)
-      if (type === "Annual") {
-        const result = await canApplyLeave(currentUser.username, from, to);
-        if (!result.allowed) return alert(`Maximum staff already applied for ${result.date}. Contact HR.`);
+      // Generate applied dates
+      const start = new Date(from);
+      const end = new Date(to);
+      const appliedDates = [];
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        appliedDates.push(d.toISOString().split("T")[0]);
       }
+      const numDays = appliedDates.length;
+      const deductionPerDay = duration === "Half Day" ? 0.5 : 1;
+      const totalDeduction = numDays * deductionPerDay;
+
+      // Quota check
+      const userDoc = await getDoc(doc(db, "users", currentUser.username));
+      const quota = userDoc.data().quota || {};
+      if (type !== "Unpaid" && (quota[type] || 0) < totalDeduction) {
+        return alert(`Insufficient ${type} leave quota. Required: ${totalDeduction}, Available: ${quota[type] || 0}`);
+      }
+
+      // Annual advance check
+      if (type === "Annual") {
+        const snap = await getDoc(doc(db, "settings", "general"));
+        const advanceDays = snap.exists() ? snap.data().advanceDaysAnnual || 0 : 0;
+        const today = new Date().setHours(0, 0, 0, 0);
+        const fromD = new Date(from).setHours(0, 0, 0, 0);
+        const daysDiff = Math.floor((fromD - today) / (1000 * 60 * 60 * 24));
+        if (daysDiff < advanceDays) {
+          return alert(`You must apply annual leave at least ${advanceDays} days in advance. prompt message`);
+        }
+      }
+
+      const result = await canApplyLeave(currentUser.username, from, to);
+      if (!result.allowed) return alert(`Maximum staff already applied for ${result.date}. Contact HR.`);
 
       const leaveId = `${currentUser.username}_${Date.now()}`;
       const applyDate = new Date().toISOString().split("T")[0];
@@ -232,11 +257,9 @@
       const userDoc = await getDoc(doc(db, "users", currentUser.username));
       if (userDoc.exists()) {
         const quota = userDoc.data().quota || {};
-        // Sort leave types alphabetically (A to Z)
-        const sortedLeaveTypes = Object.keys(quota).sort(); // Sort keys A to Z
         let html = "<ul>";
-        for (const type of sortedLeaveTypes) {
-          html += `<li>${type}: ${quota[type]} days left</li>`;
+        for (const [type, val] of Object.entries(quota)) {
+          html += `<li>${type}: ${val} days left</li>`;
         }
         html += "</ul>";
         document.getElementById("balance").innerHTML = html;
@@ -309,15 +332,27 @@
         approveBtn.textContent = "Approve";
         approveBtn.className = "btn btn-sm btn-success mx-1";
         approveBtn.onclick = async () => {
+          // Calculate total deduction
+          const leaveStart = new Date(data.from);
+          const leaveEnd = new Date(data.to);
+          const appliedDates = [];
+          for (let dt = new Date(leaveStart); dt <= leaveEnd; dt.setDate(dt.getDate() + 1)) {
+            appliedDates.push(dt.toISOString().split("T")[0]);
+          }
+          const numDays = appliedDates.length;
+          const deductionPerDay = data.duration === "Half Day" ? 0.5 : 1;
+          const totalDeduction = numDays * deductionPerDay;
+
           const uref = doc(db, "users", data.username);
           const usnap = await getDoc(uref);
           if (usnap.exists()) {
             const quota = usnap.data().quota || {};
-            const deduction = data.duration === "Half Day" ? 0.5 : 1;
-            if (quota[data.type] >= deduction) {
-              quota[data.type] -= deduction;
-              await updateDoc(uref, { quota });
+            if (data.type !== "Unpaid" && quota[data.type] < totalDeduction) {
+              alert("Insufficient quota");
+              return;
             }
+            quota[data.type] -= totalDeduction;
+            await updateDoc(uref, { quota });
           }
           await updateDoc(doc(db, "leaves", d.id), { status: "Approved" });
           loadAllRequests();
@@ -489,17 +524,15 @@
       let dateCount = 0;
       snap.forEach(d => {
         const data = d.data();
-        if (data.leaveType === "Annual") { // Only show Annual Leave limits
-          const li = document.createElement("li");
-          li.className = "list-group-item";
-          li.textContent = `${d.id}: Max Staff = ${data.maxStaff} (Annual Leave)`; // Show stored maxStaff
-          list.appendChild(li);
-          dateCount++;
-        }
+        const li = document.createElement("li");
+        li.className = "list-group-item";
+        li.textContent = `${d.id}: Max Staff = ${data.maxStaff}`;
+        list.appendChild(li);
+        dateCount++;
       });
       const countDisplay = document.createElement("li");
       countDisplay.className = "list-group-item";
-      countDisplay.textContent = `Total Dates with Max Staff Limits for Annual Leave: ${dateCount} (Default: 1 staff if not set)`;
+      countDisplay.textContent = `Total Dates with Max Staff Limits: ${dateCount}`;
       list.appendChild(countDisplay);
     }
 
@@ -512,10 +545,10 @@
       if (!date) return alert("Please select a date to delete");
 
       const limitDoc = await getDoc(doc(db, "dateLimits", date));
-      if (!limitDoc.exists() || limitDoc.data().leaveType !== "Annual") return alert("No max staff limit set for Annual Leave on this date");
+      if (!limitDoc.exists()) return alert("No max staff set for this date");
 
       await deleteDoc(doc(db, "dateLimits", date));
-      alert(`Max staff limit removed for ${date} (Annual Leave, now defaults to 1 staff)`);
+      alert(`Max staff limit removed for ${date}`);
       loadMaxDates();
     });
 
@@ -567,7 +600,7 @@
 
   <!-- Staff Section -->
   <div id="staffSection" style="display:none;">
-    <div class="card mb-3" id="applyLeave">
+    <div class="card mb-3">
       <div class="card-body">
         <h6>Apply Leave</h6>
         <select id="leaveType" class="form-control mb-2">
@@ -584,20 +617,20 @@
         <button id="applyBtn" class="btn btn-success">Submit</button>
       </div>
     </div>
-    <div class="card mb-3" id="leaveBalance">
+    <div class="card mb-3">
       <div class="card-body">
         <h6>Leave Balance</h6>
         <div id="balance"></div>
       </div>
     </div>
-    <div class="card mb-3" id="myRequests">
+    <div class="card mb-3">
       <div class="card-body">
         <h6>My Leave Requests</h6>
         <ul id="myRequests" class="list-group"></ul>
       </div>
     </div>
     <!-- Staff Leave History Section -->
-    <div class="card mb-3" id="staffLeaveHistory">
+    <div class="card mb-3">
       <div class="card-body">
         <h6>Leave History</h6>
         <div class="d-flex mb-2">
@@ -638,6 +671,16 @@
         </select>
         <input id="quotaDays" type="number" class="form-control mb-2" placeholder="Days">
         <button id="updateQuotaBtn" class="btn btn-info">Update Quota</button>
+      </div>
+    </div>
+
+    <!-- Set Annual Leave Advance Notice Days -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6>Set Annual Leave Advance Notice Days</h6>
+        <input id="advanceDays" type="number" class="form-control mb-2" placeholder="Days in advance">
+        <button id="setAdvanceBtn" class="btn btn-info">Set</button>
+        <p id="currentAdvance" class="mt-2"></p>
       </div>
     </div>
 
@@ -706,7 +749,7 @@
     <!-- HR: Set Max Staff Allowed for a Particular Date -->
     <div class="card mb-3">
       <div class="card-body">
-        <h6>Set Max Staff Allowed for a Particular Date (Annual Leave)</h6>
+        <h6>Set Max Staff Allowed for a Particular Date</h6>
         <div class="d-flex mb-2 flex-wrap">
           <input id="maxDate" type="date" class="form-control me-2 mb-2" placeholder="Select Date">
           <input id="maxStaff" type="number" class="form-control me-2 mb-2" placeholder="Max Staff Allowed">
@@ -719,7 +762,7 @@
     <!-- HR: Delete Max Staff Limit for a Particular Date -->
     <div class="card mb-3">
       <div class="card-body">
-        <h6>Delete Max Staff Limit for a Particular Date (Annual Leave)</h6>
+        <h6>Delete Max Staff Limit for a Particular Date</h6>
         <div class="d-flex mb-2 flex-wrap">
           <input id="deleteMaxDate" type="date" class="form-control me-2 mb-2" placeholder="Select Date">
           <button id="deleteMaxBtn" class="btn btn-danger mb-2">Delete Max</button>
@@ -741,7 +784,7 @@
     <!-- HR: Approve Max Staff for a Date Range -->
     <div class="card mb-3">
       <div class="card-body">
-        <h6>Approve Max Staff for a Date Range (Annual Leave)</h6>
+        <h6>Approve Max Staff for a Date Range</h6>
         <div class="d-flex mb-2 flex-wrap">
           <input id="approveMaxFromDate" type="date" class="form-control me-2 mb-2" placeholder="From Date">
           <input id="approveMaxToDate" type="date" class="form-control me-2 mb-2" placeholder="To Date">
@@ -793,18 +836,18 @@
       });
     }
 
-    // HR sets max staff for a single date (Annual Leave only)
+    // HR sets max staff for a single date
     document.getElementById("setMaxBtn").addEventListener("click", async () => {
       const date = document.getElementById("maxDate").value;
       const max = parseInt(document.getElementById("maxStaff").value);
       if (!date || !max || max < 1) return alert("Enter valid date and number");
 
-      await setDoc(doc(db, "dateLimits", date), { maxStaff: max, leaveType: "Annual" }); // Set limit for Annual Leave
-      alert(`Max staff for ${date} set to ${max} for Annual Leave (default is 1 staff if not set)`);
+      await setDoc(doc(db, "dateLimits", date), { maxStaff: max });
+      alert(`Max staff for ${date} set to ${max}`);
       loadMaxDates();
     });
 
-    // HR approves max staff for a date range (Annual Leave only)
+    // HR approves max staff for a date range
     document.getElementById("approveMaxRangeBtn").addEventListener("click", async () => {
       const fromDate = document.getElementById("approveMaxFromDate").value;
       const toDate = document.getElementById("approveMaxToDate").value;
@@ -828,16 +871,35 @@
         dates.push(d.toISOString().split("T")[0]);
       }
 
-      // Set max staff for each date (Annual Leave only)
+      // Set max staff for each date
       for (const date of dates) {
-        await setDoc(doc(db, "dateLimits", date), { maxStaff: max, leaveType: "Annual" }); // Set limit for Annual Leave
+        await setDoc(doc(db, "dateLimits", date), { maxStaff: max });
       }
 
-      alert(`Approved max ${max} staff for ${dates.length} date(s) from ${fromDate} to ${toDate} for Annual Leave (default is 1 staff if not set)`);
+      alert(`Approved max ${max} staff for ${dates.length} date(s) from ${fromDate} to ${toDate}`);
       loadMaxDates();
     });
 
-    document.addEventListener("DOMContentLoaded", loadDeleteUserList);
+    async function showCurrentAdvance() {
+      const snap = await getDoc(doc(db, "settings", "general"));
+      const days = snap.data()?.advanceDaysAnnual || 0;
+      document.getElementById("currentAdvance").textContent = `Current: ${days} days`;
+    }
+
+    document.getElementById("setAdvanceBtn").addEventListener("click", async () => {
+      const days = parseInt(document.getElementById("advanceDays").value);
+      if (isNaN(days) || days < 0) return alert("Invalid days");
+      await setDoc(doc(db, "settings", "general"), {advanceDaysAnnual: days}, {merge: true});
+      alert("Set!");
+      showCurrentAdvance();
+    });
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      loadDeleteUserList();
+      if (document.getElementById("currentAdvance")) {
+        await showCurrentAdvance();
+      }
+    });
   </script>
 
   <!-- Enhanced Responsive Styles for App-Like Experience -->
