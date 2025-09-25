@@ -57,7 +57,12 @@
     });
 
     // =================== STAFF APPLY LEAVE ===================
-    async function canApplyLeave(username, fromDate, toDate) {
+    async function canApplyLeave(username, fromDate, toDate, type) {
+      // Only apply max staff limit for Annual leave
+      if (type !== "Annual") {
+        return { allowed: true }; // Allow all other leave types without checking max staff limit
+      }
+
       const leaveSnap = await getDocs(collection(db, "leaves"));
       const dateLimitSnap = await getDocs(collection(db, "dateLimits"));
 
@@ -81,11 +86,14 @@
         let count = 0;
         leaveSnap.forEach(ld => {
           const data = ld.data();
-          const leaveStart = new Date(data.from);
-          const leaveEnd = new Date(data.to);
-          const current = new Date(date);
-          if (current >= leaveStart && current <= leaveEnd && data.status !== "Rejected") {
-            count++;
+          // Only count Annual leave requests that are not rejected
+          if (data.type === "Annual") {
+            const leaveStart = new Date(data.from);
+            const leaveEnd = new Date(data.to);
+            const current = new Date(date);
+            if (current >= leaveStart && current <= leaveEnd && data.status !== "Rejected") {
+              count++;
+            }
           }
         });
         if (count >= maxStaff) return { allowed: false, date };
@@ -133,7 +141,8 @@
         }
       }
 
-      const result = await canApplyLeave(currentUser.username, from, to);
+      // Pass the leave type to canApplyLeave
+      const result = await canApplyLeave(currentUser.username, from, to, type);
       if (!result.allowed) return alert(`Maximum staff already applied for ${result.date}. Contact HR.`);
 
       const leaveId = `${currentUser.username}_${Date.now()}`;
@@ -257,9 +266,12 @@
       const userDoc = await getDoc(doc(db, "users", currentUser.username));
       if (userDoc.exists()) {
         const quota = userDoc.data().quota || {};
+        // Get leave types and sort them A to Z
+        const sortedLeaveTypes = Object.keys(quota).sort((a, b) => a.localeCompare(b));
         let html = "<ul>";
-        for (const [type, val] of Object.entries(quota)) {
-          html += `<li>${type}: ${val} days left</li>`;
+        // Iterate over sorted leave types
+        for (const type of sortedLeaveTypes) {
+          html += `<li>${type}: ${quota[type]} days left</li>`;
         }
         html += "</ul>";
         document.getElementById("balance").innerHTML = html;
@@ -600,7 +612,7 @@
 
   <!-- Staff Section -->
   <div id="staffSection" style="display:none;">
-    <div class="card mb-3">
+    <div class="card mb-3" id="applyLeave">
       <div class="card-body">
         <h6>Apply Leave</h6>
         <select id="leaveType" class="form-control mb-2">
@@ -617,20 +629,20 @@
         <button id="applyBtn" class="btn btn-success">Submit</button>
       </div>
     </div>
-    <div class="card mb-3">
+    <div class="card mb-3" id="leaveBalance">
       <div class="card-body">
         <h6>Leave Balance</h6>
         <div id="balance"></div>
       </div>
     </div>
-    <div class="card mb-3">
+    <div class="card mb-3" id="myRequests">
       <div class="card-body">
         <h6>My Leave Requests</h6>
         <ul id="myRequests" class="list-group"></ul>
       </div>
     </div>
     <!-- Staff Leave History Section -->
-    <div class="card mb-3">
+    <div class="card mb-3" id="staffLeaveHistory">
       <div class="card-body">
         <h6>Leave History</h6>
         <div class="d-flex mb-2">
