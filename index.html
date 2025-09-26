@@ -58,21 +58,18 @@
 
     // =================== STAFF APPLY LEAVE ===================
     async function canApplyLeave(username, fromDate, toDate, type) {
-      // Only apply max staff limit for Annual leave
       if (type !== "Annual") {
-        return { allowed: true }; // Allow all other leave types without checking max staff limit
+        return { allowed: true };
       }
 
       const leaveSnap = await getDocs(collection(db, "leaves"));
       const dateLimitSnap = await getDocs(collection(db, "dateLimits"));
 
-      // Build dateLimits map
       let dateLimits = {};
       dateLimitSnap.forEach(d => {
         dateLimits[d.id] = d.data().maxStaff || 1;
       });
 
-      // Generate all dates in range
       const start = new Date(fromDate);
       const end = new Date(toDate);
       const appliedDates = [];
@@ -80,13 +77,11 @@
         appliedDates.push(d.toISOString().split("T")[0]);
       }
 
-      // Check each date
       for (const date of appliedDates) {
         const maxStaff = dateLimits[date] || 1;
         let count = 0;
         leaveSnap.forEach(ld => {
           const data = ld.data();
-          // Only count Annual leave requests that are not rejected
           if (data.type === "Annual") {
             const leaveStart = new Date(data.from);
             const leaveEnd = new Date(data.to);
@@ -111,7 +106,6 @@
       if (!from || !to) return alert("Select both From and To dates!");
       if (new Date(from) > new Date(to)) return alert("To date must be greater than or equal to From date!");
 
-      // Generate applied dates
       const start = new Date(from);
       const end = new Date(to);
       const appliedDates = [];
@@ -122,14 +116,12 @@
       const deductionPerDay = duration === "Half Day" ? 0.5 : 1;
       const totalDeduction = numDays * deductionPerDay;
 
-      // Quota check
       const userDoc = await getDoc(doc(db, "users", currentUser.username));
       const quota = userDoc.data().quota || {};
       if (type !== "Unpaid" && (quota[type] || 0) < totalDeduction) {
         return alert(`Insufficient ${type} leave quota. Required: ${totalDeduction}, Available: ${quota[type] || 0}`);
       }
 
-      // Annual advance check
       if (type === "Annual") {
         const snap = await getDoc(doc(db, "settings", "general"));
         const advanceDays = snap.exists() ? snap.data().advanceDaysAnnual || 0 : 0;
@@ -141,7 +133,6 @@
         }
       }
 
-      // Pass the leave type to canApplyLeave
       const result = await canApplyLeave(currentUser.username, from, to, type);
       if (!result.allowed) return alert(`Maximum staff already applied for ${result.date}. Contact HR.`);
 
@@ -166,11 +157,9 @@
       list.innerHTML = "";
       const currentYear = new Date().getFullYear();
 
-      // Fetch leave requests
       const snap = await getDocs(collection(db, "leaves"));
       let requests = [];
 
-      // Filter requests for the current user and current year
       snap.forEach((d) => {
         const data = d.data();
         if (data.username === currentUser.username) {
@@ -181,30 +170,25 @@
         }
       });
 
-      // Debug log to inspect retrieved requests
       console.log("Retrieved requests:", requests);
 
-      // Sort by createdAt (or applyDate as fallback) in descending order (Z to A) for precise timestamp comparison
       if (currentUser.role === "staff") {
         requests.sort((a, b) => {
           const dateA = a.createdAt ? new Date(a.createdAt) : new Date(a.applyDate);
-          const dateB = b.createdAt ? new Date(b.createdAt) : new Date(b.applyDate);
-          return dateB - dateA; // Newest first (Z to A), including time of day
+          const dateB = b.createdAt ? new Date(b.createdAt) : new Date(a.applyDate);
+          return dateB - dateA;
         });
-        requests = requests.slice(0, 10); // Limit to 10 for staff
+        requests = requests.slice(0, 10);
       }
 
-      // Debug log to inspect sorted requests
       console.log("Sorted requests:", requests);
 
-      // Display the requests
       if (requests.length === 0) {
         list.innerHTML = "<li class='list-group-item'>No leave requests found for the current year</li>";
       } else {
         requests.forEach((data) => {
           const li = document.createElement("li");
           li.className = "list-group-item";
-          // Apply color based on status
           if (data.status === "Rejected") {
             li.classList.add("text-danger");
           } else if (data.status === "Approved") {
@@ -216,20 +200,17 @@
       }
     }
 
-    // =================== STAFF LEAVE HISTORY ===================
     async function loadStaffLeaveHistory() {
       const list = document.getElementById("staffHistoryList");
       list.innerHTML = "";
       const from = document.getElementById("historyFromStaff").value;
       const to = document.getElementById("historyToStaff").value;
 
-      // Validate date range
       if (from && to && new Date(from) > new Date(to)) {
         alert("To date must be greater than or equal to From date!");
         return;
       }
 
-      // Fetch leave requests
       const snap = await getDocs(collection(db, "leaves"));
       let found = false;
       snap.forEach(d => {
@@ -240,7 +221,6 @@
           found = true;
           const li = document.createElement("li");
           li.className = "list-group-item";
-          // Apply color based on status
           if (data.status === "Rejected") {
             li.classList.add("text-danger");
           } else if (data.status === "Approved") {
@@ -266,10 +246,8 @@
       const userDoc = await getDoc(doc(db, "users", currentUser.username));
       if (userDoc.exists()) {
         const quota = userDoc.data().quota || {};
-        // Get leave types and sort them A to Z
         const sortedLeaveTypes = Object.keys(quota).sort((a, b) => a.localeCompare(b));
         let html = "<ul>";
-        // Iterate over sorted leave types
         for (const type of sortedLeaveTypes) {
           html += `<li>${type}: ${quota[type]} days left</li>`;
         }
@@ -278,7 +256,6 @@
       }
     }
 
-    // =================== ADMIN (HR/MANAGER) ===================
     document.getElementById("addUserBtn").addEventListener("click", async () => {
       const u = document.getElementById("newUser").value;
       const p = document.getElementById("newPass").value;
@@ -309,7 +286,6 @@
       alert("Password reset!");
     });
 
-    // Update quota
     document.getElementById("updateQuotaBtn").addEventListener("click", async () => {
       const uname = document.getElementById("quotaUser").value;
       const qtype = document.getElementById("quotaType").value;
@@ -345,7 +321,6 @@
         approveBtn.textContent = "Approve";
         approveBtn.className = "btn btn-sm btn-success mx-1";
         approveBtn.onclick = async () => {
-          // Calculate total deduction
           const leaveStart = new Date(data.from);
           const leaveEnd = new Date(data.to);
           const appliedDates = [];
@@ -384,7 +359,6 @@
     }
     document.getElementById("adminFilterBtn").addEventListener("click", loadAllRequests);
 
-    // =================== REPORT + USER DROPDOWNS ===================
     async function loadUserList() {
       const selects = [
         document.getElementById("quotaUser"),
@@ -430,7 +404,6 @@
       loadUserList();
     });
 
-    // =================== HR: Check Staff Applied on Date ===================
     document.getElementById("checkDateBtn").addEventListener("click", async () => {
       const date = document.getElementById("checkDate").value;
       if (!date) return alert("Please select a date");
@@ -451,7 +424,6 @@
       }
     });
 
-    // =================== REPORT DOWNLOAD ===================
     document.getElementById("downloadBtn").addEventListener("click", async () => {
       const from = document.getElementById("reportFrom").value;
       const to = document.getElementById("reportTo").value;
@@ -476,7 +448,6 @@
       a.click();
     });
 
-    // =================== VIEW LEAVE HISTORY ===================
     document.getElementById("viewHistoryBtn").addEventListener("click", async () => {
       const from = document.getElementById("historyFrom").value;
       const to = document.getElementById("historyTo").value;
@@ -502,7 +473,6 @@
       }
     });
 
-    // =================== BULK DELETE ===================
     document.getElementById("deleteBtn").addEventListener("click", async () => {
       const from = document.getElementById("deleteFrom").value;
       const to = document.getElementById("deleteTo").value;
@@ -529,7 +499,6 @@
       alert(`Deleted ${deleted} leave record(s).`);
     });
 
-    // =================== LOAD CURRENT MAX STAFF LIMITS ===================
     async function loadMaxDates() {
       const list = document.getElementById("maxDateList");
       list.innerHTML = "";
@@ -549,10 +518,8 @@
       list.appendChild(countDisplay);
     }
 
-    // Run once on page load
     loadMaxDates();
 
-    // =================== HR DELETE MAX STAFF ===================
     document.getElementById("deleteMaxBtn").addEventListener("click", async () => {
       const date = document.getElementById("deleteMaxDate").value;
       if (!date) return alert("Please select a date to delete");
@@ -565,7 +532,6 @@
       loadMaxDates();
     });
 
-    // =================== AUTO DELETE OLD DATA ===================
     async function deleteOldLeaves() {
       const threeYearsAgo = new Date();
       threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
@@ -579,7 +545,6 @@
       }
     }
 
-    // =================== ANNUAL QUOTA RESET ===================
     async function resetAllQuotasIfNeeded() {
       const currentYear = new Date().getFullYear();
       const snap = await getDocs(collection(db, "users"));
@@ -598,13 +563,23 @@
   </script>
 </head>
 <body class="container py-3">
-  <h3>Staff Leave Application</h3>
-
-  <!-- Login -->
-  <div id="loginSection">
-    <input id="username" class="form-control mb-2" placeholder="Username">
-    <input id="password" type="password" class="form-control mb-2" placeholder="Password">
-    <button id="loginBtn" class="btn btn-primary">Login</button>
+  <!-- Login Section -->
+  <div id="loginSection" class="min-vh-100">
+    <div class="app-header d-flex justify-content-between align-items-center px-3 py-2">
+      <div>
+        <h3 class="mb-0 fw-bold">SSW Transport Sdn Bhd</h3>
+        <h5 class="mb-0 text-white">Leave Management System</h5>
+      </div>
+    </div>
+    <div class="d-flex justify-content-center align-items-center" style="min-height: calc(100vh - 60px);">
+      <div class="card shadow-lg" style="max-width: 400px; width: 100%;">
+        <div class="card-body p-4">
+          <input id="username" class="form-control mb-3" placeholder="Username" required>
+          <input id="password" type="password" class="form-control mb-3" placeholder="Password" required>
+          <button id="loginBtn" class="btn btn-primary w-100">Login</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Logout -->
@@ -648,7 +623,6 @@
         <ul id="myRequests" class="list-group"></ul>
       </div>
     </div>
-    <!-- Staff Leave History Section -->
     <div class="card mb-3" id="staffLeaveHistory">
       <div class="card-body">
         <h6>Leave History</h6>
@@ -679,7 +653,6 @@
       </div>
     </div>
 
-    <!-- Set Leave Quota -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>Set Leave Quota</h6>
@@ -698,7 +671,6 @@
       </div>
     </div>
 
-    <!-- Set Annual Leave Advance Notice Days -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>Set Annual Leave Advance Notice Days</h6>
@@ -708,7 +680,6 @@
       </div>
     </div>
 
-    <!-- View Staff Leave Balance -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>View Staff Leave Balance</h6>
@@ -717,7 +688,6 @@
       </div>
     </div>
 
-    <!-- Leave Requests (All Staff) -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>Leave Requests (All Staff)</h6>
@@ -730,7 +700,6 @@
       </div>
     </div>
 
-    <!-- View Leave History -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>View Leave History</h6>
@@ -744,7 +713,6 @@
       </div>
     </div>
 
-    <!-- Download Leave Report -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>Download Leave Report</h6>
@@ -757,7 +725,6 @@
       </div>
     </div>
 
-    <!-- Bulk Delete Section -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>Bulk Delete Leave Records</h6>
@@ -770,7 +737,6 @@
       </div>
     </div>
 
-    <!-- HR: Set Max Staff Allowed for a Particular Date -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>Set Max Staff Allowed for a Particular Date</h6>
@@ -783,7 +749,6 @@
       </div>
     </div>
 
-    <!-- HR: Delete Max Staff Limit for a Particular Date -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>Delete Max Staff Limit for a Particular Date</h6>
@@ -794,7 +759,6 @@
       </div>
     </div>
 
-    <!-- HR: Check Staff Applied on Date -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>Check Staff Applied on Date</h6>
@@ -805,7 +769,6 @@
       </div>
     </div>
 
-    <!-- HR: Approve Max Staff for a Date Range -->
     <div class="card mb-3">
       <div class="card-body">
         <h6>Approve Max Staff for a Date Range</h6>
@@ -819,10 +782,8 @@
     </div>
   </div>
 
-  <!-- Responsive script -->
   <script>
     document.addEventListener("DOMContentLoaded", function () {
-      // Make all .d-flex containers stack on small screens automatically
       function adjustLayout() {
         const flexBlocks = document.querySelectorAll(".d-flex");
         flexBlocks.forEach(block => {
@@ -836,10 +797,7 @@
         });
       }
 
-      // Run once at start
       adjustLayout();
-
-      // Adjust on window resize
       window.addEventListener("resize", adjustLayout);
     });
   </script>
@@ -850,7 +808,6 @@
 
     const db = getFirestore();
 
-    // Populate deleteUser dropdown
     async function loadDeleteUserList() {
       const snap = await getDocs(collection(db, "users"));
       const sel = document.getElementById("deleteUser");
@@ -860,7 +817,6 @@
       });
     }
 
-    // HR sets max staff for a single date
     document.getElementById("setMaxBtn").addEventListener("click", async () => {
       const date = document.getElementById("maxDate").value;
       const max = parseInt(document.getElementById("maxStaff").value);
@@ -871,7 +827,6 @@
       loadMaxDates();
     });
 
-    // HR approves max staff for a date range
     document.getElementById("approveMaxRangeBtn").addEventListener("click", async () => {
       const fromDate = document.getElementById("approveMaxFromDate").value;
       const toDate = document.getElementById("approveMaxToDate").value;
@@ -887,7 +842,6 @@
         return;
       }
 
-      // Generate all dates in the range
       const start = new Date(fromDate);
       const end = new Date(toDate);
       const dates = [];
@@ -895,7 +849,6 @@
         dates.push(d.toISOString().split("T")[0]);
       }
 
-      // Set max staff for each date
       for (const date of dates) {
         await setDoc(doc(db, "dateLimits", date), { maxStaff: max });
       }
@@ -926,12 +879,10 @@
     });
   </script>
 
-  <!-- Enhanced Responsive Styles for App-Like Experience -->
   <style>
-    /* Default styles for larger screens (laptops) */
     body {
       font-size: 16px;
-      overscroll-behavior: none; /* Prevent browser pull-to-refresh */
+      overscroll-behavior: none;
     }
     .card-body {
       padding: 1.5rem;
@@ -939,7 +890,7 @@
     .form-control, .btn {
       font-size: 1rem;
       min-height: 40px;
-      transition: all 0.2s ease-in-out; /* Smooth transitions */
+      transition: all 0.2s ease-in-out;
     }
     .form-control {
       width: 100%;
@@ -947,34 +898,28 @@
     }
     .btn {
       padding: 0.5rem 1rem;
-      border-radius: 8px; /* Rounded buttons */
+      border-radius: 8px;
     }
     h3, h6 {
       font-size: 1.5rem;
     }
     .list-group-item {
       font-size: 1rem;
-      transition: background-color 0.2s ease; /* Smooth list item transitions */
+      transition: background-color 0.2s ease;
     }
-
-    /* App-like header for phones */
     .app-header {
-      display: none; /* Hidden on laptops */
+      display: flex;
     }
-
-    /* Bottom navigation for staff on phones */
     .app-nav {
-      display: none; /* Hidden by default */
+      display: none;
     }
-
-    /* Phone screens (width < 768px) */
     @media (max-width: 767.98px) {
       body {
         font-size: 14px;
         margin: 0;
-        padding-top: 60px; /* Space for fixed header */
-        padding-bottom: 60px; /* Space for bottom nav */
-        -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+        padding-top: 60px;
+        padding-bottom: 60px;
+        -webkit-overflow-scrolling: touch;
       }
       .container {
         padding: 0.5rem;
@@ -982,7 +927,7 @@
       }
       .card {
         border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1); /* Subtle shadow for app feel */
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         margin-bottom: 1rem;
       }
       .card-body {
@@ -990,17 +935,17 @@
       }
       .form-control, .btn {
         font-size: 0.9rem;
-        min-height: 44px; /* Larger touch targets */
+        min-height: 44px;
         width: 100%;
-        max-width: none; /* Full width for inputs */
+        max-width: none;
       }
       .btn {
         padding: 0.5rem;
         border-radius: 10px;
-        touch-action: manipulation; /* Better tap response */
+        touch-action: manipulation;
       }
       .btn:hover, .btn:active {
-        transform: scale(0.98); /* Subtle tap feedback */
+        transform: scale(0.98);
       }
       h3 {
         font-size: 1.2rem;
@@ -1013,14 +958,12 @@
         border-radius: 8px;
         margin-bottom: 0.5rem;
       }
-      /* Fixed app-like header */
       .app-header {
-        display: flex;
         position: fixed;
         top: 0;
         left: 0;
         right: 0;
-        background: #007bff; /* Primary color */
+        background: #007bff;
         color: white;
         padding: 0.5rem 1rem;
         z-index: 1000;
@@ -1032,12 +975,14 @@
         margin: 0;
         font-size: 1.2rem;
       }
+      .app-header h5 {
+        font-size: 0.9rem;
+      }
       .app-header #logoutBtn {
         font-size: 0.9rem;
         padding: 0.4rem 0.8rem;
-        background: #6c757d; /* Secondary color */
+        background: #6c757d;
       }
-      /* Bottom navigation for staff */
       #staffSection .app-nav {
         display: flex;
         position: fixed;
@@ -1057,20 +1002,13 @@
         margin: 0 0.25rem;
         border-radius: 8px;
       }
-      /* Hide original h3 and logout button on phones */
-      h3:not(.app-header h3), #logoutSection:not(.app-header #logoutSection) {
-        display: none;
-      }
-      /* Smooth transitions for cards */
       .card {
         transition: transform 0.2s ease;
       }
       .card:hover {
-        transform: translateY(-2px); /* Subtle lift effect */
+        transform: translateY(-2px);
       }
     }
-
-    /* Small phones (width < 576px) */
     @media (max-width: 575.98px) {
       body {
         font-size: 12px;
@@ -1079,8 +1017,11 @@
         font-size: 0.8rem;
         min-height: 40px;
       }
-      h3.app-header {
+      .app-header h3 {
         font-size: 1rem;
+      }
+      .app-header h5 {
+        font-size: 0.8rem;
       }
       h6 {
         font-size: 0.9rem;
@@ -1095,8 +1036,6 @@
         font-size: 0.8rem;
       }
     }
-
-    /* Larger screens (laptops, >= 992px) */
     @media (min-width: 992px) {
       .form-control {
         max-width: 400px;
@@ -1108,12 +1047,27 @@
         padding: 2rem;
       }
     }
+    /* Additional Login Page Styles */
+    .min-vh-100 {
+      background-color: #f8f9fa;
+    }
+    .card.shadow-lg {
+      border: none;
+      border-radius: 12px;
+    }
+    .btn-primary {
+      background-color: #007bff;
+      border-color: #007bff;
+      font-weight: 500;
+    }
+    .btn-primary:hover {
+      background-color: #0056b3;
+      border-color: #0056b3;
+    }
   </style>
 
-  <!-- App-Like Navigation Script -->
   <script>
     document.addEventListener("DOMContentLoaded", function () {
-      // Add bottom navigation for staff on phones
       function setupAppNav() {
         if (window.innerWidth < 768 && document.getElementById("staffSection").style.display === "block") {
           let nav = document.querySelector(".app-nav");
@@ -1134,7 +1088,6 @@
         }
       }
 
-      // Scroll to section for bottom nav
       window.scrollToSection = function(id) {
         const section = document.querySelector(`#${id}`);
         if (section) {
@@ -1146,11 +1099,9 @@
         }
       };
 
-      // Update layout and nav on load and resize
       setupAppNav();
       window.addEventListener("resize", setupAppNav);
 
-      // Update header with logout button visibility
       function updateHeader() {
         const header = document.querySelector(".app-header");
         if (header) {
@@ -1164,7 +1115,6 @@
       }
 
       updateHeader();
-      // Update header on login/logout
       const observer = new MutationObserver(updateHeader);
       observer.observe(document.getElementById("logoutSection"), { attributes: true });
     });
