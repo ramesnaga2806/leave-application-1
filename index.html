@@ -287,7 +287,8 @@
         password: p, role: r,
         quota: {
           Annual: 14, Medical: 10, Emergency: 5, Unpaid: 0,
-          Maternity: 60, Paternity: 7, Compassionate: 3
+          Maternity: 60, Paternity: 7, Compassionate: 3,
+          Hospitalisation: 10, Marriage: 10, ParentalChildCare: 10, Special: 10, StudyExam: 10
         },
         last_reset: new Date().getFullYear()
       });
@@ -587,7 +588,8 @@
         if (!data.last_reset || data.last_reset < currentYear) {
           const defaultQuota = {
             Annual: 14, Medical: 10, Emergency: 5, Unpaid: 0,
-            Maternity: 60, Paternity: 7, Compassionate: 3
+            Maternity: 60, Paternity: 7, Compassionate: 3,
+            Hospitalisation: 10, Marriage: 10, ParentalChildCare: 10, Special: 10, StudyExam: 10
           };
           await updateDoc(u.ref, { quota: defaultQuota, last_reset: currentYear });
         }
@@ -618,6 +620,11 @@
         <select id="leaveType" class="form-control mb-2">
           <option>Annual</option><option>Medical</option><option>Emergency</option>
           <option>Unpaid</option><option>Maternity</option><option>Paternity</option><option>Compassionate</option>
+          <option value="Hospitalisation">Hospitalisation Leave</option>
+          <option value="Marriage">Marriage Leave</option>
+          <option value="ParentalChildCare">Parental / Child Care Leave</option>
+          <option value="Special">Special Leave</option>
+          <option value="StudyExam">Study / Exam Leave</option>
         </select>
         <select id="leaveDuration" class="form-control mb-2">
           <option>Full Day</option>
@@ -680,6 +687,11 @@
         <select id="quotaType" class="form-control mb-2">
           <option>Annual</option><option>Medical</option><option>Emergency</option>
           <option>Unpaid</option><option>Maternity</option><option>Paternity</option><option>Compassionate</option>
+          <option value="Hospitalisation">Hospitalisation Leave</option>
+          <option value="Marriage">Marriage Leave</option>
+          <option value="ParentalChildCare">Parental / Child Care Leave</option>
+          <option value="Special">Special Leave</option>
+          <option value="StudyExam">Study / Exam Leave</option>
         </select>
         <input id="quotaDays" type="number" class="form-control mb-2" placeholder="Days">
         <button id="updateQuotaBtn" class="btn btn-info">Update Quota</button>
